@@ -15,7 +15,13 @@ import * as DocumentPicker from "expo-document-picker";
 import { createAnalyzedSession } from "./src/services/analysisEngine";
 import { glossary, intelLibrary, recentSessions } from "./src/data/mockData";
 import { useWebVoiceCapture } from "./src/hooks/useWebVoiceCapture";
-import { readStoredAppState, writeStoredAppState } from "./src/services/localStore";
+import {
+  createAssetPackage,
+  parseAssetPackage,
+  readStoredAppState,
+  StoredAppState,
+  writeStoredAppState
+} from "./src/services/localStore";
 import {
   answerSessionQuestion,
   createSessionInsights,
@@ -192,6 +198,7 @@ export default function App() {
     proxyUrl: getDefaultProxyUrl()
   });
   const [isStorageReady, setIsStorageReady] = useState(false);
+  const [assetTransferStatus, setAssetTransferStatus] = useState("本机资产会自动保存，API Key 不会写入备份。");
 
   useEffect(() => {
     const stored = readStoredAppState();
@@ -243,6 +250,56 @@ export default function App() {
 
   const openSession = (session: Session) => {
     setSelectedSession(ensureSessionDetails(session));
+  };
+
+  const currentStoredState = (): StoredAppState => ({
+    sessions,
+    intelItems,
+    terms,
+    correctionRules,
+    openAIConfig: {
+      model: openAIConfig.model,
+      transcriptionModel: openAIConfig.transcriptionModel,
+      proxyUrl: openAIConfig.proxyUrl
+    },
+    savedAt: new Date().toISOString()
+  });
+
+  const exportAssets = async () => {
+    const assetPackage = createAssetPackage(currentStoredState());
+    await downloadTextFile(
+      JSON.stringify(assetPackage, null, 2),
+      `voice-intel-assets-${formatDateForFilename(new Date())}.json`,
+      "application/json;charset=utf-8"
+    );
+    setAssetTransferStatus("资产包已导出，可用于备份或迁移到另一台手机。");
+  };
+
+  const importAssets = async () => {
+    try {
+      const raw = await selectTextFile(".json,application/json,text/plain");
+      if (!raw) {
+        return;
+      }
+      const imported = parseAssetPackage(raw);
+      setSessions((items) => mergeById(imported.sessions, items));
+      setIntelItems((items) => mergeById(imported.intelItems, items));
+      setTerms((items) => mergeById(imported.terms, items));
+      setCorrectionRules((items) => mergeById(imported.correctionRules, items));
+      setOpenAIConfig((current) => ({
+        ...current,
+        model: imported.openAIConfig.model || current.model,
+        transcriptionModel: imported.openAIConfig.transcriptionModel || current.transcriptionModel,
+        proxyUrl: imported.openAIConfig.proxyUrl || current.proxyUrl,
+        apiKey: ""
+      }));
+      setAssetTransferStatus(
+        `导入完成：${imported.sessions.length} 个任务、${imported.intelItems.length} 条情报、${imported.terms.length} 个术语、${imported.correctionRules.length} 条纠错规则。`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "无法导入资产包。";
+      setAssetTransferStatus(`导入失败：${message}`);
+    }
   };
 
   const handleAnalyzed = (session: Session) => {
@@ -352,6 +409,9 @@ export default function App() {
               terms: terms.length,
               corrections: correctionRules.length
             }}
+            assetTransferStatus={assetTransferStatus}
+            onExportAssets={exportAssets}
+            onImportAssets={importAssets}
           />
         )}
       </View>
@@ -948,7 +1008,10 @@ function CorrectionScreen({
 function SettingsScreen({
   openAIConfig,
   onConfigChange,
-  assetCounts
+  assetCounts,
+  assetTransferStatus,
+  onExportAssets,
+  onImportAssets
 }: {
   openAIConfig: OpenAIConfig;
   onConfigChange: (config: OpenAIConfig) => void;
@@ -958,6 +1021,9 @@ function SettingsScreen({
     terms: number;
     corrections: number;
   };
+  assetTransferStatus: string;
+  onExportAssets: () => void;
+  onImportAssets: () => void;
 }) {
   const updateConfig = (patch: Partial<OpenAIConfig>) => {
     onConfigChange({ ...openAIConfig, ...patch });
@@ -974,6 +1040,19 @@ function SettingsScreen({
         title="本机资产"
         value={`已自动保存：${assetCounts.sessions} 个任务、${assetCounts.intel} 条情报、${assetCounts.terms} 个术语、${assetCounts.corrections} 条纠错规则。API Key 不会持久保存。`}
       />
+      <View style={styles.assetPanel}>
+        <View style={styles.assetActions}>
+          <Pressable accessibilityRole="button" style={styles.assetButton} onPress={onExportAssets}>
+            <MaterialCommunityIcons name="download-outline" size={18} color="#ffffff" />
+            <Text style={styles.assetButtonText}>导出资产包</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" style={[styles.assetButton, styles.assetButtonSecondary]} onPress={onImportAssets}>
+            <MaterialCommunityIcons name="upload-outline" size={18} color={colors.text} />
+            <Text style={[styles.assetButtonText, styles.assetButtonTextSecondary]}>导入资产包</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.assetStatus}>{assetTransferStatus}</Text>
+      </View>
       <View style={styles.settingsPanel}>
         <Text style={styles.cardTitle}>OpenAI API</Text>
         <Text style={styles.cardText}>
@@ -1426,8 +1505,12 @@ async function copyOrDownloadMarkdown(markdown: string, filename: string) {
     return;
   }
 
+  await downloadTextFile(markdown, filename, "text/markdown;charset=utf-8");
+}
+
+async function downloadTextFile(text: string, filename: string, mimeType: string) {
   if (Platform.OS === "web" && typeof document !== "undefined") {
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([text], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1435,6 +1518,47 @@ async function copyOrDownloadMarkdown(markdown: string, filename: string) {
     link.click();
     URL.revokeObjectURL(url);
   }
+}
+
+async function selectTextFile(accept: string): Promise<string | null> {
+  if (Platform.OS !== "web") {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/json", "text/plain", "*/*"],
+      copyToCacheDirectory: true,
+      multiple: false
+    });
+
+    if (result.canceled) {
+      return null;
+    }
+
+    const asset = result.assets[0];
+    if (!asset) {
+      return null;
+    }
+
+    const response = await fetch(asset.uri);
+    return response.text();
+  }
+
+  if (typeof document === "undefined") {
+    throw new Error("当前平台不支持文件选择。");
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      file.text().then(resolve).catch(() => resolve(null));
+    };
+    input.click();
+  });
 }
 
 async function selectAudioFile(): Promise<{ name: string; blob: Blob } | null> {
@@ -1484,6 +1608,12 @@ function formatNow() {
   ).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(
     now.getMinutes()
   ).padStart(2, "0")}`;
+}
+
+function formatDateForFilename(date: Date) {
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(
+    date.getDate()
+  ).padStart(2, "0")}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -2091,6 +2221,49 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.md
+  },
+  assetPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md
+  },
+  assetActions: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  assetButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 8,
+    backgroundColor: colors.text,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm
+  },
+  assetButtonSecondary: {
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  assetButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  assetButtonTextSecondary: {
+    color: colors.text
+  },
+  assetStatus: {
+    color: colors.subtext,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: spacing.sm
   },
   inputLabel: {
     color: colors.text,

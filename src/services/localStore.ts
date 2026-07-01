@@ -12,6 +12,13 @@ export interface StoredAppState {
   savedAt: string;
 }
 
+export interface AssetPackage {
+  app: "multi-scene-voice-intel";
+  version: 1;
+  exportedAt: string;
+  data: StoredAppState;
+}
+
 export function readStoredAppState(): Partial<StoredAppState> | null {
   const storage = getStorage();
   if (!storage) {
@@ -45,6 +52,23 @@ export function clearStoredAppState() {
   storage?.removeItem(STORAGE_KEY);
 }
 
+export function createAssetPackage(state: StoredAppState): AssetPackage {
+  return {
+    app: "multi-scene-voice-intel",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: trimStoredState(state)
+  };
+}
+
+export function parseAssetPackage(raw: string): StoredAppState {
+  const parsed = JSON.parse(raw) as Partial<AssetPackage> | Partial<StoredAppState>;
+  if (isAssetPackage(parsed)) {
+    return normalizeStoredState(parsed.data);
+  }
+  return normalizeStoredState(parsed as Partial<StoredAppState>);
+}
+
 function trimStoredState(state: StoredAppState): StoredAppState {
   return {
     ...state,
@@ -59,6 +83,36 @@ function trimStoredState(state: StoredAppState): StoredAppState {
     },
     savedAt: state.savedAt
   };
+}
+
+function normalizeStoredState(value: Partial<StoredAppState>): StoredAppState {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid asset package.");
+  }
+
+  return trimStoredState({
+    sessions: Array.isArray(value.sessions) ? value.sessions : [],
+    intelItems: Array.isArray(value.intelItems) ? value.intelItems : [],
+    terms: Array.isArray(value.terms) ? value.terms : [],
+    correctionRules: Array.isArray(value.correctionRules) ? value.correctionRules : [],
+    openAIConfig: {
+      model: value.openAIConfig?.model || "gpt-5.5",
+      transcriptionModel: value.openAIConfig?.transcriptionModel || "gpt-4o-transcribe",
+      proxyUrl: value.openAIConfig?.proxyUrl || "/api"
+    },
+    savedAt: value.savedAt || new Date().toISOString()
+  });
+}
+
+function isAssetPackage(value: Partial<AssetPackage> | Partial<StoredAppState>): value is AssetPackage {
+  return (
+    value &&
+    typeof value === "object" &&
+    "app" in value &&
+    value.app === "multi-scene-voice-intel" &&
+    "data" in value &&
+    Boolean(value.data)
+  );
 }
 
 function getStorage(): Storage | null {
