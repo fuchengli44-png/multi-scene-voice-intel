@@ -148,15 +148,15 @@ function getDefaultProxyUrl() {
   const locationLike = (globalThis as { location?: { protocol?: string; hostname?: string } }).location;
   const hostname = locationLike?.hostname;
 
-  if (!hostname || hostname === "localhost") {
+  if (!hostname || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
     return "http://127.0.0.1:8787";
   }
 
-  if (hostname === "127.0.0.1" || hostname === "::1") {
-    return `http://${hostname}:8787`;
+  if (locationLike?.protocol === "https:") {
+    return "/api";
   }
 
-  return `${locationLike?.protocol === "https:" ? "https" : "http"}://${hostname}:8787`;
+  return `http://${hostname}:8787`;
 }
 
 export default function App() {

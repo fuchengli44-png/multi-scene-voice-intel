@@ -228,3 +228,15 @@ If the phone cannot connect, allow Node.js through Windows Firewall for private 
 ```text
 http://<computer-lan-ip>:8787/health
 ```
+
+## Vercel OpenAI API
+
+The deployed PWA uses `/api` as the default proxy on HTTPS domains. To enable real transcription and real AI analysis on phones:
+
+1. Open the Vercel project `multi-scene-voice-intel`.
+2. Go to Settings -> Environment Variables.
+3. Add `OPENAI_API_KEY` for Production, Preview, and Development.
+4. Redeploy the latest deployment.
+5. Check `https://multi-scene-voice-intel.vercel.app/api/health`.
+
+If `hasApiKey` is `true`, recording upload, transcription, meeting minutes, language correction, intelligence extraction, and automatic learning can call OpenAI through the Vercel backend. Do not put the production API key into the mobile browser settings.
