@@ -15,6 +15,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { createAnalyzedSession } from "./src/services/analysisEngine";
 import { glossary, intelLibrary, recentSessions } from "./src/data/mockData";
 import { useWebVoiceCapture } from "./src/hooks/useWebVoiceCapture";
+import { readStoredAppState, writeStoredAppState } from "./src/services/localStore";
 import {
   answerSessionQuestion,
   createSessionInsights,
@@ -190,6 +191,50 @@ export default function App() {
     transcriptionModel: "gpt-4o-transcribe",
     proxyUrl: getDefaultProxyUrl()
   });
+  const [isStorageReady, setIsStorageReady] = useState(false);
+
+  useEffect(() => {
+    const stored = readStoredAppState();
+    if (stored?.sessions?.length) {
+      setSessions(stored.sessions);
+    }
+    if (stored?.intelItems?.length) {
+      setIntelItems(stored.intelItems);
+    }
+    if (stored?.terms?.length) {
+      setTerms(stored.terms);
+    }
+    if (stored?.correctionRules?.length) {
+      setCorrectionRules(stored.correctionRules);
+    }
+    if (stored?.openAIConfig) {
+      setOpenAIConfig((current) => ({
+        ...current,
+        ...stored.openAIConfig,
+        apiKey: ""
+      }));
+    }
+    setIsStorageReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isStorageReady) {
+      return;
+    }
+
+    writeStoredAppState({
+      sessions,
+      intelItems,
+      terms,
+      correctionRules,
+      openAIConfig: {
+        model: openAIConfig.model,
+        transcriptionModel: openAIConfig.transcriptionModel,
+        proxyUrl: openAIConfig.proxyUrl
+      },
+      savedAt: new Date().toISOString()
+    });
+  }, [correctionRules, intelItems, isStorageReady, openAIConfig.model, openAIConfig.proxyUrl, openAIConfig.transcriptionModel, sessions, terms]);
 
   const openCapture = (mode: SceneMode) => {
     setSelectedMode(mode);
@@ -297,7 +342,18 @@ export default function App() {
             onAddRule={(rule) => setCorrectionRules((items) => [rule, ...items])}
           />
         )}
-        {activeTab === "settings" && <SettingsScreen openAIConfig={openAIConfig} onConfigChange={setOpenAIConfig} />}
+        {activeTab === "settings" && (
+          <SettingsScreen
+            openAIConfig={openAIConfig}
+            onConfigChange={setOpenAIConfig}
+            assetCounts={{
+              sessions: sessions.length,
+              intel: intelItems.length,
+              terms: terms.length,
+              corrections: correctionRules.length
+            }}
+          />
+        )}
       </View>
       <BottomTabs activeTab={activeTab} onChange={setActiveTab} />
       {selectedSession ? <ResultSheet session={selectedSession} onClose={() => setSelectedSession(null)} /> : null}
@@ -891,10 +947,17 @@ function CorrectionScreen({
 
 function SettingsScreen({
   openAIConfig,
-  onConfigChange
+  onConfigChange,
+  assetCounts
 }: {
   openAIConfig: OpenAIConfig;
   onConfigChange: (config: OpenAIConfig) => void;
+  assetCounts: {
+    sessions: number;
+    intel: number;
+    terms: number;
+    corrections: number;
+  };
 }) {
   const updateConfig = (patch: Partial<OpenAIConfig>) => {
     onConfigChange({ ...openAIConfig, ...patch });
@@ -906,6 +969,11 @@ function SettingsScreen({
         <Text style={styles.kicker}>Settings</Text>
         <Text style={styles.titleSmall}>系统设置</Text>
       </View>
+      <SettingRow
+        icon="content-save-check-outline"
+        title="本机资产"
+        value={`已自动保存：${assetCounts.sessions} 个任务、${assetCounts.intel} 条情报、${assetCounts.terms} 个术语、${assetCounts.corrections} 条纠错规则。API Key 不会持久保存。`}
+      />
       <View style={styles.settingsPanel}>
         <Text style={styles.cardTitle}>OpenAI API</Text>
         <Text style={styles.cardText}>
