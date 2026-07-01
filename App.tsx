@@ -16,6 +16,14 @@ import { createAnalyzedSession } from "./src/services/analysisEngine";
 import { glossary, intelLibrary, recentSessions } from "./src/data/mockData";
 import { useWebVoiceCapture } from "./src/hooks/useWebVoiceCapture";
 import {
+  answerSessionQuestion,
+  createSessionInsights,
+  exportSessionMarkdown,
+  formatConfidence,
+  formatTimeRange,
+  scoreIntelItem
+} from "./src/services/insightEngine";
+import {
   createOpenAIBackedSession,
   transcribeAudioBlob,
   analyzeTextWithOpenAI,
@@ -24,7 +32,16 @@ import {
   OpenAIConfig
 } from "./src/services/openaiClient";
 import { colors, spacing } from "./src/styles/theme";
-import { CorrectionKind, CorrectionRule, IntelItem, KnowledgeTerm, LearningFeedPayload, SceneMode, Session } from "./src/types";
+import {
+  CorrectionKind,
+  CorrectionRule,
+  IntelItem,
+  KnowledgeTerm,
+  LearningFeedPayload,
+  LearningInsight,
+  SceneMode,
+  Session
+} from "./src/types";
 
 type TabKey = "dashboard" | "capture" | "intel" | "glossary" | "feed" | "correction" | "settings";
 
@@ -940,6 +957,24 @@ function SettingsScreen({
 }
 
 function ResultSheet({ session, onClose }: { session: Session; onClose: () => void }) {
+  const insights = session.insights ?? createSessionInsights(session);
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [exportStatus, setExportStatus] = useState("");
+  const suggestedQuestions = insights.followUpQuestions;
+
+  const askQuestion = (text = question) => {
+    const nextQuestion = text.trim();
+    setQuestion(nextQuestion);
+    setAnswer(answerSessionQuestion(session, nextQuestion));
+  };
+
+  const exportMarkdown = async () => {
+    const markdown = exportSessionMarkdown({ ...session, insights });
+    await copyOrDownloadMarkdown(markdown, `${session.title || "voice-intel-session"}.md`);
+    setExportStatus("已生成 Markdown，可粘贴到会议纪要、Notion 或知识库。");
+  };
+
   return (
     <View style={styles.overlay}>
       <View style={styles.sheet}>
@@ -953,9 +988,28 @@ function ResultSheet({ session, onClose }: { session: Session; onClose: () => vo
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.sheetContent}>
+          <View style={styles.insightBanner}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.cardTitle}>对标洞察：{insights.benchmark}</Text>
+              <Pressable accessibilityRole="button" style={styles.smallActionButton} onPress={exportMarkdown}>
+                <MaterialCommunityIcons name="file-export-outline" size={16} color="#ffffff" />
+                <Text style={styles.smallActionText}>Markdown</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.cardText}>{insights.summary}</Text>
+            {exportStatus ? <Text style={styles.successText}>{exportStatus}</Text> : null}
+          </View>
           {session.meeting ? <MeetingResult session={session} /> : null}
           {session.language ? <LanguageResult session={session} /> : null}
-          {session.intel ? session.intel.map((item) => <IntelCard item={item} key={item.id} />) : null}
+          {session.intel ? session.intel.map((item) => <IntelCardV2 item={item} key={item.id} />) : null}
+          <InsightQa
+            question={question}
+            answer={answer}
+            suggestedQuestions={suggestedQuestions}
+            onChangeQuestion={setQuestion}
+            onAsk={askQuestion}
+          />
+          <LearningReport insights={insights.learningReport} />
         </ScrollView>
       </View>
     </View>
@@ -975,7 +1029,14 @@ function MeetingResult({ session }: { session: Session }) {
       <SectionHeader title="Speaker 标注与双语规范化" />
       {meeting.segments.map((segment) => (
         <View key={segment.id} style={styles.segmentCard}>
-          <Text style={styles.speaker}>{segment.speaker}</Text>
+          <View style={styles.rowBetween}>
+            <Text style={styles.speaker}>{segment.speaker}</Text>
+            <Text style={styles.timestampText}>{formatTimeRange(segment)}</Text>
+          </View>
+          <Text style={styles.cardMeta}>
+            {segment.speakerId ? `${segment.speakerId} · ` : ""}
+            ASR 置信度 {formatConfidence(segment.confidence)}
+          </Text>
           <Text style={styles.original}>{segment.originalText}</Text>
           <Text style={styles.normalized}>{segment.normalizedText}</Text>
           <Text style={styles.cardText}>口语中文：{segment.oralChinese}</Text>
@@ -1022,6 +1083,68 @@ function LanguageResult({ session }: { session: Session }) {
   );
 }
 
+function InsightQa({
+  question,
+  answer,
+  suggestedQuestions,
+  onChangeQuestion,
+  onAsk
+}: {
+  question: string;
+  answer: string;
+  suggestedQuestions: string[];
+  onChangeQuestion: (text: string) => void;
+  onAsk: (text?: string) => void;
+}) {
+  return (
+    <View style={styles.qaPanel}>
+      <SectionHeader title="会后追问" />
+      <Text style={styles.cardText}>像 Notta 一样把转写变成可追问的工作台，但问题聚焦工业日语、客户动向和行动判断。</Text>
+      <View style={styles.questionChips}>
+        {suggestedQuestions.map((item) => (
+          <Pressable key={item} accessibilityRole="button" style={styles.questionChip} onPress={() => onAsk(item)}>
+            <Text style={styles.questionChipText}>{item}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <TextInput
+        value={question}
+        onChangeText={onChangeQuestion}
+        placeholder="追问：客户真正担心什么？下一步怎么跟进？"
+        placeholderTextColor="#89939d"
+        multiline
+        style={styles.qaInput}
+      />
+      <Pressable accessibilityRole="button" style={styles.askButton} onPress={() => onAsk()}>
+        <MaterialCommunityIcons name="comment-question-outline" size={18} color="#ffffff" />
+        <Text style={styles.primaryButtonText}>生成追问回答</Text>
+      </Pressable>
+      {answer ? <Text style={styles.answerText}>{answer}</Text> : null}
+    </View>
+  );
+}
+
+function LearningReport({ insights }: { insights: LearningInsight[] }) {
+  if (!insights.length) {
+    return null;
+  }
+
+  return (
+    <View>
+      <SectionHeader title="自动学习报告" />
+      {insights.map((item) => (
+        <View key={item.id} style={styles.learningItem}>
+          <Text style={styles.learningCategory}>{item.category}</Text>
+          <View style={styles.learningBody}>
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={styles.cardText}>{item.detail}</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function SceneButton({ mode, onPress }: { mode: SceneMode; onPress: () => void }) {
   const meta = modeMeta[mode];
   return (
@@ -1049,6 +1172,41 @@ function SectionHeader({ title, action }: { title: string; action?: string }) {
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {action ? <Text style={styles.sectionAction}>{action}</Text> : null}
+    </View>
+  );
+}
+
+function IntelCardV2({ item }: { item: IntelItem }) {
+  const confidenceColor =
+    item.confidence === "高" ? colors.success : item.confidence === "中" ? colors.warning : colors.accent;
+  const score = scoreIntelItem(item);
+
+  return (
+    <View style={styles.intelCard}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.cardTitle}>{item.type}</Text>
+        <Text style={[styles.confidenceTag, { color: confidenceColor, borderColor: confidenceColor }]}>
+          可信度 {item.confidence}
+        </Text>
+      </View>
+      <Text style={styles.cardMeta}>{item.sourceScene}</Text>
+      <View style={styles.scoreRow}>
+        <View style={styles.scoreBadge}>
+          <Text style={styles.scoreValue}>{score}</Text>
+          <Text style={styles.scoreLabel}>可信度评分</Text>
+        </View>
+        <View style={styles.scoreBody}>
+          <Text style={styles.cardMeta}>验证状态：{item.verificationStatus ?? "待验证"}</Text>
+          {(item.evidenceSignals ?? ["来源场景", "涉及公司", "建议行动"]).slice(0, 3).map((signal) => (
+            <Text key={signal} style={styles.signalText}>
+              · {signal}
+            </Text>
+          ))}
+        </View>
+      </View>
+      <Text style={styles.cardText}>{item.content}</Text>
+      <Text style={styles.companyText}>涉及公司：{item.companies.join(" / ")}</Text>
+      <Text style={styles.recommendation}>{item.suggestedAction}</Text>
     </View>
   );
 }
@@ -1169,6 +1327,24 @@ function applyCorrectionRules(inputText: string, correctionRules: CorrectionRule
     }
     return text;
   }, inputText);
+}
+
+async function copyOrDownloadMarkdown(markdown: string, filename: string) {
+  const navigatorLike = (globalThis as { navigator?: Navigator }).navigator;
+  if (navigatorLike?.clipboard?.writeText) {
+    await navigatorLike.clipboard.writeText(markdown);
+    return;
+  }
+
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename.replace(/[\\/:*?"<>|]/g, "-");
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function selectAudioFile(): Promise<{ name: string; blob: Blob } | null> {
@@ -1627,6 +1803,43 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     overflow: "hidden"
   },
+  scoreRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    padding: spacing.sm,
+    marginTop: spacing.sm
+  },
+  scoreBadge: {
+    width: 72,
+    minHeight: 62,
+    borderRadius: 8,
+    backgroundColor: colors.text,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xs
+  },
+  scoreValue: {
+    color: "#ffffff",
+    fontSize: 22,
+    fontWeight: "900"
+  },
+  scoreLabel: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "800",
+    textAlign: "center"
+  },
+  scoreBody: {
+    flex: 1
+  },
+  signalText: {
+    color: colors.subtext,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: spacing.xs
+  },
   companyText: {
     color: colors.text,
     fontSize: 13,
@@ -1847,6 +2060,36 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xxl
   },
+  insightBanner: {
+    backgroundColor: "#eef5f1",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cfe1d7",
+    padding: spacing.md,
+    marginBottom: spacing.md
+  },
+  smallActionButton: {
+    minHeight: 34,
+    borderRadius: 8,
+    backgroundColor: colors.text,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm
+  },
+  smallActionText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  successText: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17,
+    marginTop: spacing.sm
+  },
   segmentCard: {
     backgroundColor: colors.surface,
     borderRadius: 8,
@@ -1856,8 +2099,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm
   },
   speaker: {
+    flex: 1,
     color: colors.meeting,
     fontSize: 13,
+    fontWeight: "900"
+  },
+  timestampText: {
+    color: colors.subtext,
+    fontSize: 12,
     fontWeight: "900"
   },
   original: {
@@ -1919,6 +2168,91 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.sm
+  },
+  qaPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.md
+  },
+  questionChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.md
+  },
+  questionChip: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  questionChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  qaInput: {
+    minHeight: 78,
+    color: colors.text,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    fontSize: 14,
+    lineHeight: 20,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    textAlignVertical: "top"
+  },
+  askButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md
+  },
+  answerText: {
+    color: colors.text,
+    backgroundColor: "#f3efe8",
+    borderRadius: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    overflow: "hidden"
+  },
+  learningItem: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm
+  },
+  learningCategory: {
+    color: "#ffffff",
+    backgroundColor: colors.meeting,
+    borderRadius: 8,
+    overflow: "hidden",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    alignSelf: "flex-start"
+  },
+  learningBody: {
+    flex: 1
   },
   bulletRow: {
     flexDirection: "row",

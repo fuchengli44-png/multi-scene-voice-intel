@@ -13,8 +13,12 @@ export type IntelType =
 
 export interface TranscriptSegment {
   id: string;
+  startMs?: number;
+  endMs?: number;
+  speakerId?: string;
   speaker: string;
   language: Language;
+  confidence?: number;
   originalText: string;
   normalizedText: string;
   oralChinese?: string;
@@ -58,8 +62,25 @@ export interface IntelItem {
   sourceScene: string;
   content: string;
   confidence: Confidence;
+  confidenceScore?: number;
+  verificationStatus?: "待验证" | "交叉验证中" | "已验证" | "不采用";
+  evidenceSignals?: string[];
   companies: string[];
   suggestedAction: string;
+}
+
+export interface LearningInsight {
+  id: string;
+  category: "术语" | "表达" | "情报" | "行动";
+  title: string;
+  detail: string;
+}
+
+export interface SessionInsights {
+  benchmark: "Notta" | "Soniox" | "System";
+  summary: string;
+  followUpQuestions: string[];
+  learningReport: LearningInsight[];
 }
 
 export interface KnowledgeTerm {
@@ -78,6 +99,7 @@ export interface Session {
   createdAt: string;
   inputText: string;
   status: "draft" | "analyzed";
+  insights?: SessionInsights;
   meeting?: MeetingSummary;
   language?: LanguageFeedback;
   intel?: IntelItem[];

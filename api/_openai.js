@@ -181,8 +181,12 @@ ${correctionContext}`;
     "segments": [
       {
         "id": "seg-1",
+        "startMs": 0,
+        "endMs": 12000,
+        "speakerId": "speaker-1",
         "speaker": "Japanese engineer A / customer B / you",
         "language": "ja|zh|mixed",
+        "confidence": 0.92,
         "originalText": "original utterance",
         "normalizedText": "standard business Japanese or normalized expression",
         "oralChinese": "plain Chinese",
@@ -245,6 +249,9 @@ ${inputWithCorrections}`;
       "sourceScene": "酒局 / 高尔夫 / 客户交流 / 公开讲座 / 未知",
       "content": "intelligence content",
       "confidence": "高|中|低",
+      "confidenceScore": 62,
+      "verificationStatus": "待验证|交叉验证中|已验证|不采用",
+      "evidenceSignals": ["source clue", "company clue", "verification clue"],
       "companies": ["company"],
       "suggestedAction": "recommended follow-up"
     }
@@ -291,6 +298,9 @@ Return valid JSON only:
       "sourceScene": "录音投喂 / 会议 / 公开讲座",
       "content": "intelligence content",
       "confidence": "高|中|低",
+      "confidenceScore": 62,
+      "verificationStatus": "待验证|交叉验证中|已验证|不采用",
+      "evidenceSignals": ["source clue", "company clue", "verification clue"],
       "companies": ["company or institution"],
       "suggestedAction": "follow-up action"
     }

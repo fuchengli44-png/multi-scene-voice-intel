@@ -7,6 +7,7 @@ import {
   Session
 } from "../types";
 import { glossary, intelLibrary } from "../data/mockData";
+import { createSessionInsights } from "./insightEngine";
 
 const nowText = () => {
   const now = new Date();
@@ -28,8 +29,12 @@ export function analyzeMeeting(input: string): MeetingSummary {
     segments: [
       {
         id: "seg-1",
+        startMs: 0,
+        endMs: 18000,
+        speakerId: "speaker-ja-engineer-a",
         speaker: "日方工程师A",
         language: "ja",
+        confidence: 0.92,
         originalText: "膜厚のばらつきが少し大きくなっているようです。",
         normalizedText: "膜厚の均一性にばらつきが発生している可能性があります。",
         oralChinese: "膜厚好像变得不太均匀。",
@@ -37,8 +42,12 @@ export function analyzeMeeting(input: string): MeetingSummary {
       },
       {
         id: "seg-2",
+        startMs: 18000,
+        endMs: 36000,
+        speakerId: "speaker-customer-b",
         speaker: "客户B",
         language: "zh",
+        confidence: 0.88,
         originalText: "我们更担心这个问题会不会影响量产良率。",
         normalizedText: "量産時の歩留まりへの影響を確認したいというご懸念です。",
         oralChinese: "客户主要担心良率受影响。",
@@ -46,8 +55,12 @@ export function analyzeMeeting(input: string): MeetingSummary {
       },
       {
         id: "seg-3",
+        startMs: 36000,
+        endMs: 56000,
+        speakerId: "speaker-you",
         speaker: "你",
         language: "ja",
+        confidence: 0.84,
         originalText: input || "ちょっと膜厚がバラバラになってると思うんですけど。",
         normalizedText: "膜厚の均一性にばらつきが発生している可能性があります。",
         oralChinese: "我觉得膜厚有点不均匀。",
@@ -110,6 +123,9 @@ export function extractIntel(input: string): IntelItem[] {
       input ||
       "客户正在重新评估 OLED 材料供应商，可能与蒸镀稳定性、交期和报价压力有关。",
     confidence: "中",
+    confidenceScore: 62,
+    verificationStatus: "待验证",
+    evidenceSignals: ["非正式来源", "涉及客户动向", "需要采购侧或技术窗口交叉确认"],
     companies: ["目标客户", "潜在竞争供应商"],
     suggestedAction: "标记为待验证情报，通过技术窗口和采购侧进行交叉确认。"
   };
