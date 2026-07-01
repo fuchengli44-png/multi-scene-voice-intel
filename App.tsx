@@ -319,7 +319,7 @@ function DashboardScreen({
 
       <SectionHeader title="最近任务" action="查看结果" />
       {sessions.map((session) => (
-        <Pressable key={session.id} style={styles.sessionCard} onPress={() => onOpenSession(session)}>
+        <Pressable key={session.id} accessibilityRole="button" style={styles.sessionCard} onPress={() => onOpenSession(session)}>
           <View style={[styles.modeRail, { backgroundColor: modeMeta[session.mode].color }]} />
           <View style={styles.sessionBody}>
             <View style={styles.rowBetween}>
@@ -358,7 +358,7 @@ function CaptureScreen({
 }) {
   const [input, setInput] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisStatus, setAnalysisStatus] = useState("默认使用本地代理；清空代理和 API Key 后使用模拟分析。");
+  const [analysisStatus, setAnalysisStatus] = useState("HTTPS 线上版默认使用 /api；清空代理和 API Key 后使用模拟分析。");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const meta = modeMeta[selectedMode];
   const voiceCapture = useWebVoiceCapture(selectedMode);
@@ -409,7 +409,7 @@ function CaptureScreen({
     } catch (error) {
       const message = error instanceof Error ? error.message : "分析失败。";
       setAnalysisError(message);
-        setAnalysisStatus("真实分析失败，可检查代理/API Key/网络，或清空代理和 API Key 使用模拟分析。");
+        setAnalysisStatus("真实分析失败，可检查 /api 代理、API Key、网络，或清空代理和 API Key 使用模拟分析。");
     } finally {
       setIsAnalyzing(false);
     }
@@ -445,7 +445,7 @@ function CaptureScreen({
           `转写完成并已学习：${learning.terms.length} 个术语，${learning.corrections.length} 条纠错，${learning.intel.length} 条情报。`
         );
       } else {
-        setAnalysisStatus("已选择录音文件；配置本地代理或 API Key 后可自动转写。");
+        setAnalysisStatus("已选择录音文件；配置 /api、本地代理或 API Key 后可自动转写。");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "无法读取录音文件。";
@@ -466,6 +466,7 @@ function CaptureScreen({
         {(Object.keys(modeMeta) as SceneMode[]).map((mode) => (
           <Pressable
             key={mode}
+            accessibilityRole="button"
             style={[styles.segmentItem, selectedMode === mode && { backgroundColor: modeMeta[mode].color }]}
             onPress={() => onModeChange(mode)}
           >
@@ -490,6 +491,7 @@ function CaptureScreen({
           浏览器预览中可直接调用麦克风，并尝试实时语音识别；识别文本会进入下方分析输入框。
         </Text>
         <Pressable
+          accessibilityRole="button"
           style={[styles.recordButton, voiceCapture.isRecording && styles.recordButtonActive]}
           onPress={toggleRecording}
         >
@@ -510,7 +512,7 @@ function CaptureScreen({
           <Text style={styles.liveTranscript}>识别中：{voiceCapture.interimTranscript}</Text>
         ) : null}
         {voiceCapture.error ? <Text style={styles.errorText}>{voiceCapture.error}</Text> : null}
-        <Pressable style={styles.secondaryButton} onPress={pickAudioFile}>
+        <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={pickAudioFile}>
           <MaterialCommunityIcons name="file-music-outline" size={20} color={colors.text} />
           <Text style={styles.secondaryButtonText}>选择手机已有录音</Text>
         </Pressable>
@@ -538,6 +540,7 @@ function CaptureScreen({
       ) : null}
       {analysisError ? <Text style={styles.errorText}>{analysisError}</Text> : null}
       <Pressable
+        accessibilityRole="button"
         style={[styles.primaryButton, { backgroundColor: meta.color }, isAnalyzing && styles.primaryButtonDisabled]}
         onPress={analyze}
       >
@@ -563,6 +566,7 @@ function IntelLibraryScreen({ items: intelItems }: { items: IntelItem[] }) {
         {filters.map((item) => (
           <Pressable
             key={item}
+            accessibilityRole="button"
             style={[styles.filterChip, filter === item && styles.filterChipActive]}
             onPress={() => setFilter(item)}
           >
@@ -659,7 +663,7 @@ function LearningFeedScreen({
     try {
       setError(null);
       if (!openAIConfig.apiKey.trim() && !openAIConfig.proxyUrl.trim()) {
-        throw new Error("请先在设置页配置本地代理或 OpenAI API Key。");
+        throw new Error("请先在设置页配置 /api、本地代理或 OpenAI API Key。");
       }
 
       const audioFile = await selectAudioFile();
@@ -691,7 +695,7 @@ function LearningFeedScreen({
     } catch (importError) {
       const message = importError instanceof Error ? importError.message : "录音投喂失败。";
       setError(message);
-      setStatus("录音投喂失败，请检查代理/API Key/音频格式。");
+      setStatus("录音投喂失败，请检查 /api 代理、API Key 或音频格式。");
     } finally {
       setIsProcessingAudio(false);
     }
@@ -715,6 +719,7 @@ function LearningFeedScreen({
           可选择手机已有录音、公开会议录音片段或讲座音频文件。系统会先转写，再按会议模式生成纪要、Speaker 内容和 Action Items。
         </Text>
         <Pressable
+          accessibilityRole="button"
           style={[styles.secondaryButton, isProcessingAudio && styles.primaryButtonDisabled]}
           onPress={importAudioMeeting}
         >
@@ -735,7 +740,7 @@ function LearningFeedScreen({
         <Text style={styles.analysisStatusText}>{status}</Text>
       </View>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      <Pressable style={[styles.primaryButton, { backgroundColor: colors.intel }]} onPress={importFeed}>
+      <Pressable accessibilityRole="button" style={[styles.primaryButton, { backgroundColor: colors.intel }]} onPress={importFeed}>
         <MaterialCommunityIcons name="tray-arrow-down" size={20} color="#ffffff" />
         <Text style={styles.primaryButtonText}>导入到 APP</Text>
       </Pressable>
@@ -795,6 +800,7 @@ function CorrectionScreen({
         {(Object.keys(correctionKindLabels) as CorrectionKind[]).map((item) => (
           <Pressable
             key={item}
+            accessibilityRole="button"
             style={[styles.correctionKindButton, kind === item && styles.correctionKindButtonActive]}
             onPress={() => setKind(item)}
           >
@@ -840,7 +846,7 @@ function CorrectionScreen({
         <MaterialCommunityIcons name="playlist-check" size={18} color={colors.subtext} />
         <Text style={styles.analysisStatusText}>{status}</Text>
       </View>
-      <Pressable style={[styles.primaryButton, { backgroundColor: colors.accent }]} onPress={addRule}>
+      <Pressable accessibilityRole="button" style={[styles.primaryButton, { backgroundColor: colors.accent }]} onPress={addRule}>
         <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#ffffff" />
         <Text style={styles.primaryButtonText}>加入纠错规则</Text>
       </Pressable>
@@ -882,13 +888,13 @@ function SettingsScreen({
       <View style={styles.settingsPanel}>
         <Text style={styles.cardTitle}>OpenAI API</Text>
         <Text style={styles.cardText}>
-          推荐使用本地代理保护 API Key；也可临时在前端填 Key 做个人验证。
+          HTTPS 线上版推荐使用 Vercel /api 后端保护 API Key；本地开发可使用本地代理，前端直连仅适合个人临时测试。
         </Text>
-        <Text style={styles.inputLabel}>本地代理地址</Text>
+        <Text style={styles.inputLabel}>代理地址</Text>
         <TextInput
           value={openAIConfig.proxyUrl}
           onChangeText={(proxyUrl) => updateConfig({ proxyUrl })}
-          placeholder="http://127.0.0.1:8787"
+          placeholder="/api 或 http://127.0.0.1:8787"
           placeholderTextColor="#89939d"
           autoCapitalize="none"
           style={styles.singleLineInput}
@@ -925,9 +931,9 @@ function SettingsScreen({
       <SettingRow
         icon="cpu-64-bit"
         title="AI 模式"
-        value={openAIConfig.proxyUrl ? "本地代理 + OpenAI API" : openAIConfig.apiKey ? "前端直连 OpenAI API" : "本地模拟分析"}
+        value={openAIConfig.proxyUrl ? "代理后端 + OpenAI API" : openAIConfig.apiKey ? "前端直连 OpenAI API" : "本地模拟分析"}
       />
-      <SettingRow icon="cloud-lock-outline" title="隐私策略" value="推荐把 OPENAI_API_KEY 放在 .env，由本地代理调用 OpenAI；前端直连仅适合个人临时测试。" />
+      <SettingRow icon="cloud-lock-outline" title="隐私策略" value="生产环境把 OPENAI_API_KEY 放在 Vercel 环境变量；本地开发放在 .env，由代理调用 OpenAI。" />
       <SettingRow icon="database-outline" title="RAG 资产" value="预留 FAISS / Weaviate 知识库接口" />
     </ScrollView>
   );
@@ -942,7 +948,7 @@ function ResultSheet({ session, onClose }: { session: Session; onClose: () => vo
             <Text style={styles.kicker}>Analysis Result</Text>
             <Text style={styles.sheetTitle}>{session.title}</Text>
           </View>
-          <Pressable style={styles.iconButton} onPress={onClose}>
+          <Pressable accessibilityRole="button" style={styles.iconButton} onPress={onClose}>
             <MaterialCommunityIcons name="close" size={22} color={colors.text} />
           </Pressable>
         </View>
@@ -1019,7 +1025,7 @@ function LanguageResult({ session }: { session: Session }) {
 function SceneButton({ mode, onPress }: { mode: SceneMode; onPress: () => void }) {
   const meta = modeMeta[mode];
   return (
-    <Pressable style={styles.sceneButton} onPress={onPress}>
+    <Pressable accessibilityRole="button" style={styles.sceneButton} onPress={onPress}>
       <View style={[styles.sceneIcon, { backgroundColor: meta.color }]}>
         <MaterialCommunityIcons name={meta.icon} size={24} color="#ffffff" />
       </View>
@@ -1113,7 +1119,7 @@ function BottomTabs({ activeTab, onChange }: { activeTab: TabKey; onChange: (tab
       {tabItems.map((tab) => {
         const active = activeTab === tab.key;
         return (
-          <Pressable key={tab.key} style={styles.tabItem} onPress={() => onChange(tab.key)}>
+          <Pressable key={tab.key} accessibilityRole="tab" style={styles.tabItem} onPress={() => onChange(tab.key)}>
             <MaterialCommunityIcons name={tab.icon} size={22} color={active ? colors.accent : colors.subtext} />
             <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
           </Pressable>
