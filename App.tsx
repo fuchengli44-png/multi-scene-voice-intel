@@ -196,6 +196,10 @@ export default function App() {
     setActiveTab("capture");
   };
 
+  const openSession = (session: Session) => {
+    setSelectedSession(ensureSessionDetails(session));
+  };
+
   const handleAnalyzed = (session: Session) => {
     setSessions((items) => [session, ...items]);
     if (session.intel?.length) {
@@ -263,7 +267,7 @@ export default function App() {
             intelCount={intelItems.length}
             termCount={terms.length}
             onOpenCapture={openCapture}
-            onOpenSession={setSelectedSession}
+            onOpenSession={openSession}
           />
         )}
         {activeTab === "capture" && (
@@ -1293,6 +1297,24 @@ function mergeById<T extends { id: string }>(incoming: T[], existing: T[]) {
     map.set(item.id, item);
   }
   return Array.from(map.values());
+}
+
+function ensureSessionDetails(session: Session): Session {
+  if (session.meeting || session.language || session.intel) {
+    return {
+      ...session,
+      insights: session.insights ?? createSessionInsights(session)
+    };
+  }
+
+  const analyzed = createAnalyzedSession(session.mode, session.inputText);
+  return {
+    ...analyzed,
+    id: session.id,
+    title: session.title || analyzed.title,
+    createdAt: session.createdAt,
+    insights: createSessionInsights(analyzed)
+  };
 }
 
 function searchTerms(terms: KnowledgeTerm[], query: string) {
