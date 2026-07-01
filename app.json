@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "多场景语音情报系统",
+    "slug": "multi-scene-voice-intel",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#f7f8fa"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lee.multiscenevoiceintel",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "用于录制会议、表达训练和情报场景语音，并生成转写、纪要和语言学习资产。"
+      }
+    },
+    "android": {
+      "package": "com.lee.multiscenevoiceintel",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "用于录制会议、表达训练和情报场景语音，并生成转写、纪要和语言学习资产。"
+        }
+      ]
+    ]
+  }
+}

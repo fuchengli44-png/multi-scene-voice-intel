@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+.expo-local/
+dist/
+dist-test/
+.env
+.env.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+expo-tunnel*.log
+pwa-server*.log

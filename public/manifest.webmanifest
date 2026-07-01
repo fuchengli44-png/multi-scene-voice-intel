@@ -1,0 +1,19 @@
+{
+  "name": "多场景语音情报系统",
+  "short_name": "语音情报",
+  "description": "会议、日语表达训练、非正式情报提取与产业术语学习的移动工作台。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f8fa",
+  "theme_color": "#172026",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

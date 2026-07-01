@@ -1,0 +1,44 @@
+{
+  "name": "multi-scene-voice-intel",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web:local": "expo start --web --port 8081 --host localhost",
+    "mobile:web": "expo start --web --port 8081 --host lan",
+    "mobile:tunnel": "expo start --web --port 8081 --tunnel",
+    "build:pwa": "expo export --platform web --output-dir dist && node scripts/patch-pwa.mjs",
+    "serve:pwa": "node server/static-pwa-server.mjs",
+    "build:android:apk": "eas build --platform android --profile preview-apk",
+    "build:android:aab": "eas build --platform android --profile production",
+    "api:proxy": "node server/openai-proxy.mjs",
+    "phone:check": "node server/phone-check.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~5.0.5",
+    "@expo/vector-icons": "^14.1.0",
+    "expo": "~53.0.0",
+    "expo-asset": "~11.1.7",
+    "expo-audio": "^57.0.0",
+    "expo-document-picker": "^57.0.0",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-native": "^0.79.6",
+    "react-native-web": "^0.20.0"
+  },
+  "devDependencies": {
+    "@expo/ngrok": "^4.1.0",
+    "@types/babel__generator": "^7.27.0",
+    "@types/babel__template": "^7.4.4",
+    "@types/istanbul-lib-report": "^3.0.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "~19.0.10",
+    "@types/yargs-parser": "^21.0.3",
+    "typescript": "~5.8.3"
+  }
+}
