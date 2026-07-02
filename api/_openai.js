@@ -1,4 +1,5 @@
 const OPENAI_API_BASE = "https://api.openai.com/v1";
+const DEEPSEEK_API_BASE = "https://api.deepseek.com";
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -36,14 +37,67 @@ function assertApiKey() {
   }
 }
 
+function assertLLMKey(provider) {
+  if (provider === "deepseek") {
+    if (!process.env.DEEPSEEK_API_KEY) {
+      const error = new Error("DEEPSEEK_API_KEY is not configured in Vercel environment variables.");
+      error.statusCode = 500;
+      throw error;
+    }
+    return;
+  }
+
+  assertApiKey();
+}
+
 async function analyze(body) {
   const mode = typeof body.mode === "string" ? body.mode : "meeting";
   const inputText = typeof body.inputText === "string" ? body.inputText : "";
+  const provider = body.provider === "deepseek" ? "deepseek" : "openai";
   const model = typeof body.model === "string" && body.model ? body.model : "gpt-5.5";
   const correctionRules = Array.isArray(body.correctionRules) ? body.correctionRules : [];
 
   if (!inputText.trim()) {
     throw new Error("No inputText provided.");
+  }
+
+  assertLLMKey(provider);
+
+  if (provider === "deepseek") {
+    const response = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model || "deepseek-v4-flash",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a Chinese-Japanese industrial intelligence analysis engine. Return valid JSON only."
+          },
+          {
+            role: "user",
+            content: buildAnalysisPrompt(mode, inputText, correctionRules)
+          }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(await readOpenAIError(response, "DeepSeek analysis failed"));
+    }
+
+    const data = await response.json();
+    const text = extractChatCompletionText(data);
+    if (!text) {
+      throw new Error("DeepSeek returned no output text.");
+    }
+
+    return parseJson(text);
   }
 
   const response = await fetch(`${OPENAI_API_BASE}/responses`, {
@@ -122,11 +176,51 @@ async function transcribe(body) {
 
 async function learnRecording(body) {
   const inputText = typeof body.inputText === "string" ? body.inputText : "";
+  const provider = body.provider === "deepseek" ? "deepseek" : "openai";
   const model = typeof body.model === "string" && body.model ? body.model : "gpt-5.5";
   const correctionRules = Array.isArray(body.correctionRules) ? body.correctionRules : [];
 
   if (!inputText.trim()) {
     throw new Error("No inputText provided.");
+  }
+
+  assertLLMKey(provider);
+
+  if (provider === "deepseek") {
+    const response = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model || "deepseek-v4-flash",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You extract reusable terminology, expression corrections, and industrial intelligence from Chinese-Japanese recordings. Return valid JSON only."
+          },
+          {
+            role: "user",
+            content: buildRecordingLearningPrompt(inputText, correctionRules)
+          }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(await readOpenAIError(response, "DeepSeek recording learning failed"));
+    }
+
+    const data = await response.json();
+    const text = extractChatCompletionText(data);
+    if (!text) {
+      throw new Error("DeepSeek returned no learning output text.");
+    }
+
+    return parseJson(text);
   }
 
   const response = await fetch(`${OPENAI_API_BASE}/responses`, {
@@ -350,6 +444,10 @@ function extractOutputText(data) {
     ?.flatMap((item) => item.content ?? [])
     .map((item) => item.text ?? "")
     .join("\n");
+}
+
+function extractChatCompletionText(data) {
+  return data?.choices?.[0]?.message?.content ?? "";
 }
 
 async function readOpenAIError(response, fallback) {

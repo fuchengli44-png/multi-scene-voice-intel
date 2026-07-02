@@ -10,11 +10,19 @@ import {
 } from "../types";
 
 const OPENAI_API_BASE = "https://api.openai.com/v1";
+const DEEPSEEK_API_BASE = "https://api.deepseek.com";
 const MAX_VERCEL_PROXY_AUDIO_BYTES = 3.2 * 1024 * 1024;
+
+export type LLMProvider = "openai" | "deepseek";
+export type ASRProvider = "openai";
 
 export interface OpenAIConfig {
   apiKey: string;
+  deepSeekApiKey: string;
+  llmProvider: LLMProvider;
+  asrProvider: ASRProvider;
   model: string;
+  deepSeekModel: string;
   transcriptionModel: string;
   proxyUrl: string;
 }
@@ -41,17 +49,21 @@ const nowText = () => {
 };
 
 export function hasConfiguredOpenAI(config: OpenAIConfig) {
-  return Boolean(config.apiKey.trim() || config.proxyUrl.trim());
+  return Boolean(config.apiKey.trim() || config.deepSeekApiKey.trim() || config.proxyUrl.trim());
 }
 
-export async function assertOpenAIReady(config: OpenAIConfig) {
+export async function assertOpenAIReady(config: OpenAIConfig, purpose: "asr" | "llm" = "llm") {
+  if (purpose === "llm" && config.llmProvider === "deepseek" && config.deepSeekApiKey.trim()) {
+    return;
+  }
+
   if (config.apiKey.trim()) {
     return;
   }
 
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
   if (!proxyUrl) {
-    throw new Error("未配置 OpenAI API Key 或代理地址。");
+    throw new Error("未配置 API Key 或代理地址。");
   }
 
   const response = await fetch(`${proxyUrl}/health`);
@@ -59,9 +71,20 @@ export async function assertOpenAIReady(config: OpenAIConfig) {
     throw new Error(`代理健康检查失败：HTTP ${response.status}`);
   }
 
-  const data = (await response.json()) as { hasApiKey?: boolean };
-  if (!data.hasApiKey) {
-    throw new Error("线上代理已连接，但 Vercel 还没有配置 OPENAI_API_KEY。请在 Vercel 环境变量中添加后重新部署。");
+  const data = (await response.json()) as { hasApiKey?: boolean; hasOpenAIKey?: boolean; hasDeepSeekKey?: boolean };
+  const hasOpenAIKey = Boolean(data.hasApiKey || data.hasOpenAIKey);
+  const hasDeepSeekKey = Boolean(data.hasDeepSeekKey);
+
+  if (purpose === "asr" && !hasOpenAIKey) {
+    throw new Error("录音转写需要 ASR Key。当前 /api 已连接，但 Vercel 还没有配置 OPENAI_API_KEY。");
+  }
+
+  if (purpose === "llm" && config.llmProvider === "deepseek" && !hasDeepSeekKey) {
+    throw new Error("DeepSeek 分析已选择，但 Vercel 还没有配置 DEEPSEEK_API_KEY。");
+  }
+
+  if (purpose === "llm" && config.llmProvider === "openai" && !hasOpenAIKey) {
+    throw new Error("OpenAI 分析已选择，但 Vercel 还没有配置 OPENAI_API_KEY。");
   }
 }
 
@@ -70,7 +93,7 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
     throw new Error("录音文件为空，请重新录音或选择有效音频文件。");
   }
 
-  await assertOpenAIReady(config);
+  await assertOpenAIReady(config, "asr");
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
 
   if (!config.apiKey.trim() && proxyUrl) {
@@ -87,12 +110,13 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
         audioBase64: await blobToBase64(audioBlob),
         mimeType: audioBlob.type || "audio/webm",
         mode,
+        provider: config.asrProvider,
         model: config.transcriptionModel
       })
     });
 
     if (!response.ok) {
-      throw new Error(await readOpenAIError(response, "Transcription failed"));
+      throw new Error(await readProviderError(response, "Transcription failed"));
     }
 
     const data = (await response.json()) as { text?: string };
@@ -114,7 +138,7 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
   });
 
   if (!response.ok) {
-    throw new Error(await readOpenAIError(response, "Transcription failed"));
+    throw new Error(await readProviderError(response, "Transcription failed"));
   }
 
   const data = (await response.json()) as { text?: string };
@@ -130,61 +154,40 @@ export async function analyzeTextWithOpenAI(
   config: OpenAIConfig,
   correctionRules: CorrectionRule[] = []
 ) {
-  await assertOpenAIReady(config);
+  await assertOpenAIReady(config, "llm");
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
 
-  if (!config.apiKey.trim() && proxyUrl) {
+  if (!config.apiKey.trim() && !config.deepSeekApiKey.trim() && proxyUrl) {
     const response = await fetch(`${proxyUrl}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         mode,
         inputText,
-        model: config.model,
+        provider: config.llmProvider,
+        model: config.llmProvider === "deepseek" ? config.deepSeekModel : config.model,
         correctionRules: correctionRulesForPrompt(correctionRules)
       })
     });
 
     if (!response.ok) {
-      throw new Error(await readOpenAIError(response, "Structured analysis failed"));
+      throw new Error(await readProviderError(response, "Structured analysis failed"));
     }
 
     return normalizeModelResult(mode, await response.json());
   }
 
-  const response = await fetch(`${OPENAI_API_BASE}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: config.model,
-      input: [
-        {
-          role: "system",
-          content:
-            "You are a Chinese-Japanese industrial voice intelligence analysis engine. Return valid JSON only."
-        },
-        {
-          role: "user",
-          content: buildAnalysisPrompt(mode, inputText, correctionRules)
-        }
-      ]
-    })
+  const parsed = await callDirectLLM({
+    provider: config.llmProvider,
+    apiKey: config.llmProvider === "deepseek" ? config.deepSeekApiKey : config.apiKey,
+    model: config.llmProvider === "deepseek" ? config.deepSeekModel : config.model,
+    system:
+      "You are a Chinese-Japanese industrial voice intelligence analysis engine. Return valid JSON only.",
+    prompt: buildAnalysisPrompt(mode, inputText, correctionRules),
+    fallback: "Structured analysis failed"
   });
 
-  if (!response.ok) {
-    throw new Error(await readOpenAIError(response, "Structured analysis failed"));
-  }
-
-  const data = await response.json();
-  const text = extractOutputText(data);
-  if (!text) {
-    throw new Error("The model returned no parseable output text.");
-  }
-
-  return normalizeModelResult(mode, parseJson(text));
+  return normalizeModelResult(mode, parsed);
 }
 
 export async function learnFromRecordingText(
@@ -192,60 +195,39 @@ export async function learnFromRecordingText(
   config: OpenAIConfig,
   correctionRules: CorrectionRule[] = []
 ) {
-  await assertOpenAIReady(config);
+  await assertOpenAIReady(config, "llm");
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
 
-  if (!config.apiKey.trim() && proxyUrl) {
+  if (!config.apiKey.trim() && !config.deepSeekApiKey.trim() && proxyUrl) {
     const response = await fetch(`${proxyUrl}/learn-recording`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         inputText,
-        model: config.model,
+        provider: config.llmProvider,
+        model: config.llmProvider === "deepseek" ? config.deepSeekModel : config.model,
         correctionRules: correctionRulesForPrompt(correctionRules)
       })
     });
 
     if (!response.ok) {
-      throw new Error(await readOpenAIError(response, "Recording language learning failed"));
+      throw new Error(await readProviderError(response, "Recording language learning failed"));
     }
 
     return normalizeRecordingLearningResult(await response.json());
   }
 
-  const response = await fetch(`${OPENAI_API_BASE}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: config.model,
-      input: [
-        {
-          role: "system",
-          content:
-            "You extract reusable terminology, expression corrections, translation preferences, speaker hints, and intelligence from Chinese-Japanese industrial recordings. Return valid JSON only."
-        },
-        {
-          role: "user",
-          content: buildRecordingLearningPrompt(inputText, correctionRules)
-        }
-      ]
-    })
+  const parsed = await callDirectLLM({
+    provider: config.llmProvider,
+    apiKey: config.llmProvider === "deepseek" ? config.deepSeekApiKey : config.apiKey,
+    model: config.llmProvider === "deepseek" ? config.deepSeekModel : config.model,
+    system:
+      "You extract reusable terminology, expression corrections, translation preferences, speaker hints, and intelligence from Chinese-Japanese industrial recordings. Return valid JSON only.",
+    prompt: buildRecordingLearningPrompt(inputText, correctionRules),
+    fallback: "Recording language learning failed"
   });
 
-  if (!response.ok) {
-    throw new Error(await readOpenAIError(response, "Recording language learning failed"));
-  }
-
-  const data = await response.json();
-  const text = extractOutputText(data);
-  if (!text) {
-    throw new Error("The model returned no recording learning result.");
-  }
-
-  return normalizeRecordingLearningResult(parseJson(text));
+  return normalizeRecordingLearningResult(parsed);
 }
 
 export function createOpenAIBackedSession(mode: SceneMode, inputText: string, result: OpenAIAnalysisResult): Session {
@@ -276,6 +258,77 @@ export function createOpenAIBackedSession(mode: SceneMode, inputText: string, re
     ...base,
     intel: result.intel ?? extractIntel(inputText)
   };
+}
+
+async function callDirectLLM({
+  provider,
+  apiKey,
+  model,
+  system,
+  prompt,
+  fallback
+}: {
+  provider: LLMProvider;
+  apiKey: string;
+  model: string;
+  system: string;
+  prompt: string;
+  fallback: string;
+}) {
+  if (provider === "deepseek") {
+    const response = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: model || "deepseek-v4-flash",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(await readProviderError(response, `DeepSeek ${fallback}`));
+    }
+
+    const data = await response.json();
+    const text = extractChatCompletionText(data);
+    if (!text) {
+      throw new Error("DeepSeek returned no parseable output text.");
+    }
+    return parseJson(text);
+  }
+
+  const response = await fetch(`${OPENAI_API_BASE}/responses`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        { role: "system", content: system },
+        { role: "user", content: prompt }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await readProviderError(response, fallback));
+  }
+
+  const data = await response.json();
+  const text = extractOutputText(data);
+  if (!text) {
+    throw new Error("The model returned no parseable output text.");
+  }
+  return parseJson(text);
 }
 
 function buildAnalysisPrompt(mode: SceneMode, inputText: string, correctionRules: CorrectionRule[] = []) {
@@ -504,7 +557,12 @@ function extractOutputText(data: unknown) {
   return output?.flatMap((item) => item.content ?? []).map((item) => item.text ?? "").join("\n") ?? "";
 }
 
-async function readOpenAIError(response: Response, fallback: string) {
+function extractChatCompletionText(data: unknown) {
+  const choice = (data as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0];
+  return choice?.message?.content ?? "";
+}
+
+async function readProviderError(response: Response, fallback: string) {
   try {
     const body = (await response.json()) as { error?: { message?: string } };
     return body.error?.message ?? `${fallback}: HTTP ${response.status}`;

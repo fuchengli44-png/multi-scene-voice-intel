@@ -193,7 +193,11 @@ export default function App() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [openAIConfig, setOpenAIConfig] = useState<OpenAIConfig>({
     apiKey: "",
+    deepSeekApiKey: "",
+    llmProvider: "openai",
+    asrProvider: "openai",
     model: "gpt-5.5",
+    deepSeekModel: "deepseek-v4-flash",
     transcriptionModel: "gpt-4o-transcribe",
     proxyUrl: getDefaultProxyUrl()
   });
@@ -218,7 +222,8 @@ export default function App() {
       setOpenAIConfig((current) => ({
         ...current,
         ...stored.openAIConfig,
-        apiKey: ""
+        apiKey: "",
+        deepSeekApiKey: ""
       }));
     }
     setIsStorageReady(true);
@@ -236,12 +241,27 @@ export default function App() {
       correctionRules,
       openAIConfig: {
         model: openAIConfig.model,
+        deepSeekModel: openAIConfig.deepSeekModel,
+        llmProvider: openAIConfig.llmProvider,
+        asrProvider: openAIConfig.asrProvider,
         transcriptionModel: openAIConfig.transcriptionModel,
         proxyUrl: openAIConfig.proxyUrl
       },
       savedAt: new Date().toISOString()
     });
-  }, [correctionRules, intelItems, isStorageReady, openAIConfig.model, openAIConfig.proxyUrl, openAIConfig.transcriptionModel, sessions, terms]);
+  }, [
+    correctionRules,
+    intelItems,
+    isStorageReady,
+    openAIConfig.asrProvider,
+    openAIConfig.deepSeekModel,
+    openAIConfig.llmProvider,
+    openAIConfig.model,
+    openAIConfig.proxyUrl,
+    openAIConfig.transcriptionModel,
+    sessions,
+    terms
+  ]);
 
   const openCapture = (mode: SceneMode) => {
     setSelectedMode(mode);
@@ -259,6 +279,9 @@ export default function App() {
     correctionRules,
     openAIConfig: {
       model: openAIConfig.model,
+      deepSeekModel: openAIConfig.deepSeekModel,
+      llmProvider: openAIConfig.llmProvider,
+      asrProvider: openAIConfig.asrProvider,
       transcriptionModel: openAIConfig.transcriptionModel,
       proxyUrl: openAIConfig.proxyUrl
     },
@@ -289,9 +312,13 @@ export default function App() {
       setOpenAIConfig((current) => ({
         ...current,
         model: imported.openAIConfig.model || current.model,
+        deepSeekModel: imported.openAIConfig.deepSeekModel || current.deepSeekModel,
+        llmProvider: imported.openAIConfig.llmProvider || current.llmProvider,
+        asrProvider: imported.openAIConfig.asrProvider || current.asrProvider,
         transcriptionModel: imported.openAIConfig.transcriptionModel || current.transcriptionModel,
         proxyUrl: imported.openAIConfig.proxyUrl || current.proxyUrl,
-        apiKey: ""
+        apiKey: "",
+        deepSeekApiKey: ""
       }));
       setAssetTransferStatus(
         `导入完成：${imported.sessions.length} 个任务、${imported.intelItems.length} 条情报、${imported.terms.length} 个术语、${imported.correctionRules.length} 条纠错规则。`
@@ -1105,10 +1132,30 @@ function SettingsScreen({
         <Text style={styles.assetStatus}>{assetTransferStatus}</Text>
       </View>
       <View style={styles.settingsPanel}>
-        <Text style={styles.cardTitle}>OpenAI API</Text>
+        <Text style={styles.cardTitle}>AI Provider</Text>
         <Text style={styles.cardText}>
-          HTTPS 线上版推荐使用 Vercel /api 后端保护 API Key；本地开发可使用本地代理，前端直连仅适合个人临时测试。
+          文本分析可选 OpenAI 或 DeepSeek；录音转写仍使用 ASR/Whisper 通道。生产环境推荐把 Key 放在 Vercel 环境变量。
         </Text>
+        <Text style={styles.inputLabel}>LLM 提供商</Text>
+        <View style={styles.providerRow}>
+          {(["openai", "deepseek"] as const).map((provider) => {
+            const active = openAIConfig.llmProvider === provider;
+            return (
+              <Pressable
+                key={provider}
+                accessibilityRole="button"
+                style={[styles.providerButton, active && styles.providerButtonActive]}
+                onPress={() => updateConfig({ llmProvider: provider })}
+              >
+                <Text style={[styles.providerButtonText, active && styles.providerButtonTextActive]}>
+                  {provider === "openai" ? "OpenAI" : "DeepSeek"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.inputLabel}>ASR 转写服务</Text>
+        <Text style={styles.readonlyPill}>OpenAI / Whisper 兼容通道</Text>
         <Text style={styles.inputLabel}>代理地址</Text>
         <TextInput
           value={openAIConfig.proxyUrl}
@@ -1118,7 +1165,7 @@ function SettingsScreen({
           autoCapitalize="none"
           style={styles.singleLineInput}
         />
-        <Text style={styles.inputLabel}>API Key</Text>
+        <Text style={styles.inputLabel}>OpenAI API Key（可选，前端临时测试）</Text>
         <TextInput
           value={openAIConfig.apiKey}
           onChangeText={(apiKey) => updateConfig({ apiKey })}
@@ -1128,11 +1175,30 @@ function SettingsScreen({
           autoCapitalize="none"
           style={styles.singleLineInput}
         />
-        <Text style={styles.inputLabel}>分析模型</Text>
+        <Text style={styles.inputLabel}>DeepSeek API Key（可选，前端临时测试）</Text>
+        <TextInput
+          value={openAIConfig.deepSeekApiKey}
+          onChangeText={(deepSeekApiKey) => updateConfig({ deepSeekApiKey })}
+          placeholder="sk-..."
+          placeholderTextColor="#89939d"
+          secureTextEntry
+          autoCapitalize="none"
+          style={styles.singleLineInput}
+        />
+        <Text style={styles.inputLabel}>OpenAI 分析模型</Text>
         <TextInput
           value={openAIConfig.model}
           onChangeText={(model) => updateConfig({ model })}
           placeholder="gpt-5.5"
+          placeholderTextColor="#89939d"
+          autoCapitalize="none"
+          style={styles.singleLineInput}
+        />
+        <Text style={styles.inputLabel}>DeepSeek 分析模型</Text>
+        <TextInput
+          value={openAIConfig.deepSeekModel}
+          onChangeText={(deepSeekModel) => updateConfig({ deepSeekModel })}
+          placeholder="deepseek-v4-flash"
           placeholderTextColor="#89939d"
           autoCapitalize="none"
           style={styles.singleLineInput}
@@ -1150,7 +1216,9 @@ function SettingsScreen({
       <SettingRow
         icon="cpu-64-bit"
         title="AI 模式"
-        value={openAIConfig.proxyUrl ? "代理后端 + OpenAI API" : openAIConfig.apiKey ? "前端直连 OpenAI API" : "本地模拟分析"}
+        value={`${openAIConfig.llmProvider === "deepseek" ? "DeepSeek" : "OpenAI"} 分析 + OpenAI/Whisper 转写${
+          openAIConfig.proxyUrl ? "（代理后端）" : openAIConfig.apiKey || openAIConfig.deepSeekApiKey ? "（前端临时 Key）" : "（本地模拟）"
+        }`}
       />
       <SettingRow icon="cloud-lock-outline" title="隐私策略" value="生产环境把 OPENAI_API_KEY 放在 Vercel 环境变量；本地开发放在 .env，由代理调用 OpenAI。" />
       <SettingRow icon="database-outline" title="RAG 资产" value="预留 FAISS / Weaviate 知识库接口" />
@@ -2315,6 +2383,44 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
     marginTop: spacing.sm
+  },
+  providerRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.sm
+  },
+  providerButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  providerButtonActive: {
+    backgroundColor: colors.text,
+    borderColor: colors.text
+  },
+  providerButtonText: {
+    color: colors.subtext,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  providerButtonTextActive: {
+    color: "#ffffff"
+  },
+  readonlyPill: {
+    minHeight: 40,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceMuted,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    overflow: "hidden"
   },
   inputLabel: {
     color: colors.text,
