@@ -49,6 +49,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recorderMimeTypeRef = useRef("audio/webm");
 
   const SpeechRecognition = useMemo(() => {
     if (Platform.OS !== "web" || typeof window === "undefined") {
@@ -58,27 +59,55 @@ export function useWebVoiceCapture(mode: SceneMode) {
     return webWindow.SpeechRecognition ?? webWindow.webkitSpeechRecognition;
   }, []);
 
+  const isSecureWebContext =
+    Platform.OS !== "web" ||
+    (typeof window !== "undefined" &&
+      (window.isSecureContext || ["localhost", "127.0.0.1"].includes(window.location.hostname)));
+
   const isSupported =
     Platform.OS !== "web" ||
-    (typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia));
+    (isSecureWebContext && typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia));
 
   const stopWebRecording = useCallback(() => {
     recognitionRef.current?.stop();
     recognitionRef.current = null;
 
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
+    const mediaRecorder = mediaRecorderRef.current;
+    if (!mediaRecorder) {
+      stopTracks(streamRef.current);
+      streamRef.current = null;
+      return Promise.resolve(null);
     }
-    mediaRecorderRef.current = null;
 
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
+    return new Promise<Blob | null>((resolve) => {
+      const finish = () => {
+        const blob =
+          chunksRef.current.length > 0
+            ? new Blob(chunksRef.current, { type: mediaRecorder.mimeType || recorderMimeTypeRef.current })
+            : null;
+        if (blob) {
+          setAudioBlob(blob);
+        }
+        mediaRecorderRef.current = null;
+        stopTracks(streamRef.current);
+        streamRef.current = null;
+        resolve(blob);
+      };
+
+      mediaRecorder.onstop = finish;
+      if (mediaRecorder.state === "recording" || mediaRecorder.state === "paused") {
+        mediaRecorder.requestData();
+        mediaRecorder.stop();
+      } else {
+        finish();
+      }
+    });
   }, []);
 
   const stop = useCallback(async () => {
     try {
       if (Platform.OS === "web") {
-        stopWebRecording();
+        await stopWebRecording();
       } else if (isRecording) {
         await nativeRecorder.stop();
         if (nativeRecorder.uri) {
@@ -86,7 +115,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
           setAudioBlob(await response.blob());
         }
       }
-      setStatus("录音已停止，可转写或生成结构化分析");
+      setStatus("录音已停止，音频已准备好，可转写或生成结构化分析。");
     } catch (stopError) {
       const message = stopError instanceof Error ? stopError.message : "停止录音失败。";
       setError(message);
@@ -97,25 +126,35 @@ export function useWebVoiceCapture(mode: SceneMode) {
   }, [isRecording, nativeRecorder, stopWebRecording]);
 
   const startWebRecording = useCallback(async () => {
-    setStatus("正在请求麦克风权限");
+    if (!isSecureWebContext) {
+      throw new Error("浏览器麦克风要求 HTTPS。请使用 Vercel HTTPS 地址，或在原生 App/Expo Go 中录音。");
+    }
+
+    setStatus("正在请求麦克风权限...");
     setAudioBlob(null);
+    setTranscript("");
+    setInterimTranscript("");
     chunksRef.current = [];
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
     streamRef.current = stream;
 
-    const mediaRecorder = new MediaRecorder(stream);
+    const mimeType = getSupportedRecordingMimeType();
+    recorderMimeTypeRef.current = mimeType || "audio/webm";
+    const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunksRef.current.push(event.data);
       }
     };
-    mediaRecorder.onstop = () => {
-      if (chunksRef.current.length > 0) {
-        setAudioBlob(new Blob(chunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" }));
-      }
-    };
     mediaRecorderRef.current = mediaRecorder;
-    mediaRecorder.start();
+    mediaRecorder.start(1000);
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -139,42 +178,44 @@ export function useWebVoiceCapture(mode: SceneMode) {
         }
 
         if (finalText) {
-          setTranscript((current) => `${current}${finalText}`.trim());
+          setTranscript((current) => `${current}\n${finalText}`.trim());
         }
         setInterimTranscript(interimText);
       };
       recognition.onerror = (event) => {
-        setError(event.message || event.error || "浏览器实时语音识别失败，可停止后上传录音转写。");
+        setError(event.message || event.error || "浏览器实时识别失败；录音文件仍会保留，可停止后转写。");
       };
       recognition.onend = () => setInterimTranscript("");
       recognitionRef.current = recognition;
       recognition.start();
-      setStatus("正在录音并尝试实时识别");
+      setStatus("正在录音，并尝试浏览器实时识别；停止后会保留音频用于 OpenAI 转写。");
     } else {
-      setStatus("正在录音；当前浏览器不支持实时语音识别，停止后可转写音频");
+      setStatus("正在录音；当前浏览器不支持实时语音识别，停止后可上传音频转写。");
     }
-  }, [SpeechRecognition, mode]);
+  }, [SpeechRecognition, isSecureWebContext, mode]);
 
   const startNativeRecording = useCallback(async () => {
-    setStatus("正在请求麦克风权限");
+    setStatus("正在请求麦克风权限...");
     const permission = await AudioModule.requestRecordingPermissionsAsync();
     if (!permission.granted) {
-      throw new Error("未获得麦克风权限。");
+      throw new Error("未获得麦克风权限。请在系统设置里允许本 App 使用麦克风。");
     }
 
     await setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true
     });
+    setAudioBlob(null);
+    setTranscript("");
+    setInterimTranscript("");
     await nativeRecorder.prepareToRecordAsync();
     nativeRecorder.record();
-    setAudioBlob(null);
-    setStatus("正在录音；停止后可转写和学习录音内容");
+    setStatus("正在录音；停止后可转写和学习录音内容。");
   }, [nativeRecorder]);
 
   const start = useCallback(async () => {
     if (!isSupported) {
-      setError("当前环境不支持录音，请使用选择录音文件。");
+      setError("当前环境不支持录音。PWA 录音需要 HTTPS；也可以选择手机已有录音文件。");
       return;
     }
 
@@ -191,7 +232,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
       setError(message);
       setStatus("录音启动失败");
       if (Platform.OS === "web") {
-        stopWebRecording();
+        await stopWebRecording();
       }
       setIsRecording(false);
     }
@@ -209,7 +250,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
   useEffect(() => {
     return () => {
       if (Platform.OS === "web") {
-        stopWebRecording();
+        void stopWebRecording();
       }
     };
   }, [stopWebRecording]);
@@ -226,4 +267,17 @@ export function useWebVoiceCapture(mode: SceneMode) {
     stop,
     transcript
   };
+}
+
+function getSupportedRecordingMimeType() {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+    return "";
+  }
+
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mpeg"];
+  return candidates.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? "";
+}
+
+function stopTracks(stream: MediaStream | null) {
+  stream?.getTracks().forEach((track) => track.stop());
 }

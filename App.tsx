@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -499,12 +499,63 @@ function CaptureScreen({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const meta = modeMeta[selectedMode];
   const voiceCapture = useWebVoiceCapture(selectedMode);
+  const lastAutoTranscribedBlobRef = useRef<Blob | null>(null);
 
   useEffect(() => {
     if (voiceCapture.transcript) {
       setInput(voiceCapture.transcript);
     }
   }, [voiceCapture.transcript]);
+
+  useEffect(() => {
+    const audioBlob = voiceCapture.audioBlob;
+    if (!audioBlob || lastAutoTranscribedBlobRef.current === audioBlob) {
+      return;
+    }
+
+    lastAutoTranscribedBlobRef.current = audioBlob;
+    if (!hasConfiguredOpenAI(openAIConfig)) {
+      setAnalysisStatus("录音已生成音频；配置 /api、Vercel OPENAI_API_KEY 或前端 API Key 后可自动转写。");
+      return;
+    }
+
+    let cancelled = false;
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysisStatus("录音已停止，正在自动转写...");
+
+    (async () => {
+      try {
+        const text = await transcribeAudioBlob(audioBlob, selectedMode, openAIConfig);
+        if (cancelled) return;
+        setInput(text);
+        setAnalysisStatus("自动转写完成，正在学习录音中的术语、表达和情报...");
+        const learning = await learnFromRecordingText(text, openAIConfig, correctionRules);
+        if (cancelled) return;
+        onLearningReady({
+          terms: learning.terms,
+          intel: learning.intel,
+          corrections: learning.corrections
+        });
+        setAnalysisStatus(
+          `自动转写完成并已学习：${learning.terms.length} 个术语，${learning.corrections.length} 条纠错，${learning.intel.length} 条情报。`
+        );
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "自动转写失败。";
+        setAnalysisError(message);
+        setAnalysisStatus("自动转写失败。请检查 /api、Vercel OPENAI_API_KEY、网络或音频格式。");
+      } finally {
+        if (!cancelled) {
+          setIsAnalyzing(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [correctionRules, onLearningReady, openAIConfig, selectedMode, voiceCapture.audioBlob]);
 
   const analyze = async () => {
     if (isAnalyzing) return;

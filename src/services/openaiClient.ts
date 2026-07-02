@@ -10,6 +10,7 @@ import {
 } from "../types";
 
 const OPENAI_API_BASE = "https://api.openai.com/v1";
+const MAX_VERCEL_PROXY_AUDIO_BYTES = 3.2 * 1024 * 1024;
 
 export interface OpenAIConfig {
   apiKey: string;
@@ -43,10 +44,42 @@ export function hasConfiguredOpenAI(config: OpenAIConfig) {
   return Boolean(config.apiKey.trim() || config.proxyUrl.trim());
 }
 
+export async function assertOpenAIReady(config: OpenAIConfig) {
+  if (config.apiKey.trim()) {
+    return;
+  }
+
+  const proxyUrl = normalizeProxyUrl(config.proxyUrl);
+  if (!proxyUrl) {
+    throw new Error("未配置 OpenAI API Key 或代理地址。");
+  }
+
+  const response = await fetch(`${proxyUrl}/health`);
+  if (!response.ok) {
+    throw new Error(`代理健康检查失败：HTTP ${response.status}`);
+  }
+
+  const data = (await response.json()) as { hasApiKey?: boolean };
+  if (!data.hasApiKey) {
+    throw new Error("线上代理已连接，但 Vercel 还没有配置 OPENAI_API_KEY。请在 Vercel 环境变量中添加后重新部署。");
+  }
+}
+
 export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, config: OpenAIConfig) {
+  if (!audioBlob.size) {
+    throw new Error("录音文件为空，请重新录音或选择有效音频文件。");
+  }
+
+  await assertOpenAIReady(config);
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
 
   if (!config.apiKey.trim() && proxyUrl) {
+    if (audioBlob.size > MAX_VERCEL_PROXY_AUDIO_BYTES) {
+      throw new Error(
+        "录音文件较大，Vercel /api 代理可能超过 4.5MB 请求限制。请先用 1-2 分钟短录音测试，或临时在设置页填 OpenAI API Key 走浏览器直传，后续可升级为对象存储上传。"
+      );
+    }
+
     const response = await fetch(`${proxyUrl}/transcribe`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -97,6 +130,7 @@ export async function analyzeTextWithOpenAI(
   config: OpenAIConfig,
   correctionRules: CorrectionRule[] = []
 ) {
+  await assertOpenAIReady(config);
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
 
   if (!config.apiKey.trim() && proxyUrl) {
@@ -158,6 +192,7 @@ export async function learnFromRecordingText(
   config: OpenAIConfig,
   correctionRules: CorrectionRule[] = []
 ) {
+  await assertOpenAIReady(config);
   const proxyUrl = normalizeProxyUrl(config.proxyUrl);
 
   if (!config.apiKey.trim() && proxyUrl) {
