@@ -233,6 +233,43 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isStorageReady || !openAIConfig.proxyUrl.trim()) {
+      return;
+    }
+
+    let cancelled = false;
+    const proxyUrl = openAIConfig.proxyUrl.trim().replace(/\/$/, "");
+
+    fetch(`${proxyUrl}/health`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) {
+          return;
+        }
+
+        const hasOpenAIKey = Boolean(data.hasApiKey || data.hasOpenAIKey);
+        const hasDeepSeekKey = Boolean(data.hasDeepSeekKey);
+        const hasGroqKey = Boolean(data.hasGroqKey);
+
+        setOpenAIConfig((current) => {
+          const next = { ...current };
+          if (current.llmProvider === "openai" && !hasOpenAIKey && hasDeepSeekKey) {
+            next.llmProvider = "deepseek";
+          }
+          if (current.asrProvider === "openai" && !hasOpenAIKey && hasGroqKey) {
+            next.asrProvider = "groq";
+          }
+          return next.llmProvider === current.llmProvider && next.asrProvider === current.asrProvider ? current : next;
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isStorageReady, openAIConfig.proxyUrl]);
+
+  useEffect(() => {
     if (!isStorageReady) {
       return;
     }
@@ -773,6 +810,15 @@ function CaptureScreen({
             onPress={() => onConfigChange({ ...openAIConfig, asrProvider: "groq" })}
           >
             <Text style={styles.providerSwitchText}>切到 Groq Whisper</Text>
+          </Pressable>
+        ) : null}
+        {openAIConfig.llmProvider === "openai" ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.providerSwitchButton}
+            onPress={() => onConfigChange({ ...openAIConfig, llmProvider: "deepseek" })}
+          >
+            <Text style={styles.providerSwitchText}>切到 DeepSeek</Text>
           </Pressable>
         ) : null}
       </View>
