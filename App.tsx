@@ -195,8 +195,8 @@ export default function App() {
     apiKey: "",
     deepSeekApiKey: "",
     groqApiKey: "",
-    llmProvider: "openai",
-    asrProvider: "openai",
+    llmProvider: "deepseek",
+    asrProvider: "groq",
     model: "gpt-5.5",
     deepSeekModel: "deepseek-v4-flash",
     groqTranscriptionModel: "whisper-large-v3-turbo",
@@ -413,6 +413,7 @@ export default function App() {
             onModeChange={setSelectedMode}
             onAnalyzed={handleAnalyzed}
             openAIConfig={openAIConfig}
+            onConfigChange={setOpenAIConfig}
             correctionRules={correctionRules}
             onLearningReady={handleRecordingLearning}
           />
@@ -514,6 +515,7 @@ function CaptureScreen({
   onModeChange,
   onAnalyzed,
   openAIConfig,
+  onConfigChange,
   correctionRules,
   onLearningReady
 }: {
@@ -521,6 +523,7 @@ function CaptureScreen({
   onModeChange: (mode: SceneMode) => void;
   onAnalyzed: (session: Session) => void;
   openAIConfig: OpenAIConfig;
+  onConfigChange: (config: OpenAIConfig) => void;
   correctionRules: CorrectionRule[];
   onLearningReady: (learning: {
     terms?: KnowledgeTerm[];
@@ -535,6 +538,8 @@ function CaptureScreen({
   const meta = modeMeta[selectedMode];
   const voiceCapture = useWebVoiceCapture(selectedMode);
   const lastAutoTranscribedBlobRef = useRef<Blob | null>(null);
+  const asrLabel = openAIConfig.asrProvider === "groq" ? "Groq Whisper" : "OpenAI Whisper";
+  const llmLabel = openAIConfig.llmProvider === "deepseek" ? "DeepSeek" : "OpenAI";
 
   useEffect(() => {
     if (voiceCapture.transcript) {
@@ -752,11 +757,24 @@ function CaptureScreen({
       />
       <View style={styles.analysisStatusBox}>
         <MaterialCommunityIcons
-          name={openAIConfig.apiKey || openAIConfig.proxyUrl ? "cloud-check-outline" : "flask-outline"}
+          name={openAIConfig.apiKey || openAIConfig.deepSeekApiKey || openAIConfig.groqApiKey || openAIConfig.proxyUrl ? "cloud-check-outline" : "flask-outline"}
           size={18}
           color={colors.subtext}
         />
         <Text style={styles.analysisStatusText}>{analysisStatus}</Text>
+      </View>
+      <View style={styles.providerStatusBox}>
+        <Text style={styles.providerStatusText}>当前转写：{asrLabel}</Text>
+        <Text style={styles.providerStatusText}>当前分析：{llmLabel}</Text>
+        {openAIConfig.asrProvider === "openai" ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.providerSwitchButton}
+            onPress={() => onConfigChange({ ...openAIConfig, asrProvider: "groq" })}
+          >
+            <Text style={styles.providerSwitchText}>切到 Groq Whisper</Text>
+          </Pressable>
+        ) : null}
       </View>
       {correctionRules.length ? (
         <Text style={styles.ruleHint}>本次分析将应用 {correctionRules.length} 条纠错/表达偏好规则。</Text>
@@ -2137,6 +2155,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     lineHeight: 18
+  },
+  providerStatusBox: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md
+  },
+  providerStatusText: {
+    color: colors.subtext,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17
+  },
+  providerSwitchButton: {
+    minHeight: 34,
+    borderRadius: 8,
+    backgroundColor: colors.text,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md
+  },
+  providerSwitchText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900"
   },
   ruleHint: {
     color: colors.subtext,

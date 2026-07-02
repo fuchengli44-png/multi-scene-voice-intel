@@ -103,8 +103,8 @@ function normalizeStoredState(value: Partial<StoredAppState>): StoredAppState {
       model: value.openAIConfig?.model || "gpt-5.5",
       deepSeekModel: value.openAIConfig?.deepSeekModel || "deepseek-v4-flash",
       groqTranscriptionModel: value.openAIConfig?.groqTranscriptionModel || "whisper-large-v3-turbo",
-      llmProvider: value.openAIConfig?.llmProvider || "openai",
-      asrProvider: value.openAIConfig?.asrProvider || "openai",
+      llmProvider: value.openAIConfig?.llmProvider || "deepseek",
+      asrProvider: value.openAIConfig?.asrProvider || "groq",
       transcriptionModel: value.openAIConfig?.transcriptionModel || "gpt-4o-transcribe",
       proxyUrl: value.openAIConfig?.proxyUrl || "/api"
     },

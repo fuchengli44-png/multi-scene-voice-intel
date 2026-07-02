@@ -89,11 +89,11 @@ export async function assertOpenAIReady(config: OpenAIConfig, purpose: "asr" | "
   const hasGroqKey = Boolean(data.hasGroqKey);
 
   if (purpose === "asr" && config.asrProvider === "openai" && !hasOpenAIKey) {
-    throw new Error("录音转写选择 OpenAI/Whisper，但 Vercel 还没有配置 OPENAI_API_KEY。");
+    throw new Error("录音转写选择 OpenAI/Whisper，但 Vercel 还没有配置 OPENAI_API_KEY。可在设置页切换到 Groq Whisper，或在 Vercel 配置 OPENAI_API_KEY。");
   }
 
   if (purpose === "asr" && config.asrProvider === "groq" && !hasGroqKey) {
-    throw new Error("录音转写选择 Groq Whisper，但 Vercel 还没有配置 GROQ_API_KEY。");
+    throw new Error("录音转写选择 Groq Whisper，但 Vercel 还没有配置 GROQ_API_KEY。请在 Vercel 环境变量配置 GROQ_API_KEY，或在设置页临时填写 Groq API Key。");
   }
 
   if (purpose === "llm" && config.llmProvider === "deepseek" && !hasDeepSeekKey) {
