@@ -11,18 +11,21 @@ import {
 
 const OPENAI_API_BASE = "https://api.openai.com/v1";
 const DEEPSEEK_API_BASE = "https://api.deepseek.com";
+const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 const MAX_VERCEL_PROXY_AUDIO_BYTES = 3.2 * 1024 * 1024;
 
 export type LLMProvider = "openai" | "deepseek";
-export type ASRProvider = "openai";
+export type ASRProvider = "openai" | "groq";
 
 export interface OpenAIConfig {
   apiKey: string;
   deepSeekApiKey: string;
+  groqApiKey: string;
   llmProvider: LLMProvider;
   asrProvider: ASRProvider;
   model: string;
   deepSeekModel: string;
+  groqTranscriptionModel: string;
   transcriptionModel: string;
   proxyUrl: string;
 }
@@ -49,10 +52,14 @@ const nowText = () => {
 };
 
 export function hasConfiguredOpenAI(config: OpenAIConfig) {
-  return Boolean(config.apiKey.trim() || config.deepSeekApiKey.trim() || config.proxyUrl.trim());
+  return Boolean(config.apiKey.trim() || config.deepSeekApiKey.trim() || config.groqApiKey.trim() || config.proxyUrl.trim());
 }
 
 export async function assertOpenAIReady(config: OpenAIConfig, purpose: "asr" | "llm" = "llm") {
+  if (purpose === "asr" && config.asrProvider === "groq" && config.groqApiKey.trim()) {
+    return;
+  }
+
   if (purpose === "llm" && config.llmProvider === "deepseek" && config.deepSeekApiKey.trim()) {
     return;
   }
@@ -71,12 +78,22 @@ export async function assertOpenAIReady(config: OpenAIConfig, purpose: "asr" | "
     throw new Error(`代理健康检查失败：HTTP ${response.status}`);
   }
 
-  const data = (await response.json()) as { hasApiKey?: boolean; hasOpenAIKey?: boolean; hasDeepSeekKey?: boolean };
+  const data = (await response.json()) as {
+    hasApiKey?: boolean;
+    hasOpenAIKey?: boolean;
+    hasDeepSeekKey?: boolean;
+    hasGroqKey?: boolean;
+  };
   const hasOpenAIKey = Boolean(data.hasApiKey || data.hasOpenAIKey);
   const hasDeepSeekKey = Boolean(data.hasDeepSeekKey);
+  const hasGroqKey = Boolean(data.hasGroqKey);
 
-  if (purpose === "asr" && !hasOpenAIKey) {
-    throw new Error("录音转写需要 ASR Key。当前 /api 已连接，但 Vercel 还没有配置 OPENAI_API_KEY。");
+  if (purpose === "asr" && config.asrProvider === "openai" && !hasOpenAIKey) {
+    throw new Error("录音转写选择 OpenAI/Whisper，但 Vercel 还没有配置 OPENAI_API_KEY。");
+  }
+
+  if (purpose === "asr" && config.asrProvider === "groq" && !hasGroqKey) {
+    throw new Error("录音转写选择 Groq Whisper，但 Vercel 还没有配置 GROQ_API_KEY。");
   }
 
   if (purpose === "llm" && config.llmProvider === "deepseek" && !hasDeepSeekKey) {
@@ -111,7 +128,7 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
         mimeType: audioBlob.type || "audio/webm",
         mode,
         provider: config.asrProvider,
-        model: config.transcriptionModel
+        model: config.asrProvider === "groq" ? config.groqTranscriptionModel : config.transcriptionModel
       })
     });
 
@@ -126,14 +143,17 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
     return data.text;
   }
 
+  const asrBaseUrl = config.asrProvider === "groq" ? GROQ_API_BASE : OPENAI_API_BASE;
+  const asrApiKey = config.asrProvider === "groq" ? config.groqApiKey : config.apiKey;
+  const asrModel = config.asrProvider === "groq" ? config.groqTranscriptionModel : config.transcriptionModel;
   const formData = new FormData();
-  formData.append("file", audioBlob, `capture-${mode}.webm`);
-  formData.append("model", config.transcriptionModel);
+  formData.append("file", audioBlob, `capture-${mode}.${audioExtensionForMime(audioBlob.type)}`);
+  formData.append("model", asrModel);
   formData.append("language", mode === "intel" ? "zh" : "ja");
 
-  const response = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+  const response = await fetch(`${asrBaseUrl}/audio/transcriptions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${config.apiKey}` },
+    headers: { Authorization: `Bearer ${asrApiKey}` },
     body: formData
   });
 
@@ -574,6 +594,14 @@ async function readProviderError(response: Response, fallback: string) {
 function normalizeProxyUrl(proxyUrl: string) {
   const trimmed = proxyUrl.trim();
   return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+function audioExtensionForMime(mimeType: string) {
+  if (mimeType.includes("mp4")) return "m4a";
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+  if (mimeType.includes("wav")) return "wav";
+  if (mimeType.includes("ogg")) return "ogg";
+  return "webm";
 }
 
 async function blobToBase64(blob: Blob) {

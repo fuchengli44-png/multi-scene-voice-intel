@@ -8,7 +8,7 @@ export interface StoredAppState {
   intelItems: IntelItem[];
   terms: KnowledgeTerm[];
   correctionRules: CorrectionRule[];
-  openAIConfig: Omit<OpenAIConfig, "apiKey" | "deepSeekApiKey">;
+  openAIConfig: Omit<OpenAIConfig, "apiKey" | "deepSeekApiKey" | "groqApiKey">;
   savedAt: string;
 }
 
@@ -79,6 +79,7 @@ function trimStoredState(state: StoredAppState): StoredAppState {
     openAIConfig: {
       model: state.openAIConfig.model,
       deepSeekModel: state.openAIConfig.deepSeekModel,
+      groqTranscriptionModel: state.openAIConfig.groqTranscriptionModel,
       llmProvider: state.openAIConfig.llmProvider,
       asrProvider: state.openAIConfig.asrProvider,
       transcriptionModel: state.openAIConfig.transcriptionModel,
@@ -101,6 +102,7 @@ function normalizeStoredState(value: Partial<StoredAppState>): StoredAppState {
     openAIConfig: {
       model: value.openAIConfig?.model || "gpt-5.5",
       deepSeekModel: value.openAIConfig?.deepSeekModel || "deepseek-v4-flash",
+      groqTranscriptionModel: value.openAIConfig?.groqTranscriptionModel || "whisper-large-v3-turbo",
       llmProvider: value.openAIConfig?.llmProvider || "openai",
       asrProvider: value.openAIConfig?.asrProvider || "openai",
       transcriptionModel: value.openAIConfig?.transcriptionModel || "gpt-4o-transcribe",

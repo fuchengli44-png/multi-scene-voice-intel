@@ -194,10 +194,12 @@ export default function App() {
   const [openAIConfig, setOpenAIConfig] = useState<OpenAIConfig>({
     apiKey: "",
     deepSeekApiKey: "",
+    groqApiKey: "",
     llmProvider: "openai",
     asrProvider: "openai",
     model: "gpt-5.5",
     deepSeekModel: "deepseek-v4-flash",
+    groqTranscriptionModel: "whisper-large-v3-turbo",
     transcriptionModel: "gpt-4o-transcribe",
     proxyUrl: getDefaultProxyUrl()
   });
@@ -223,7 +225,8 @@ export default function App() {
         ...current,
         ...stored.openAIConfig,
         apiKey: "",
-        deepSeekApiKey: ""
+        deepSeekApiKey: "",
+        groqApiKey: ""
       }));
     }
     setIsStorageReady(true);
@@ -242,6 +245,7 @@ export default function App() {
       openAIConfig: {
         model: openAIConfig.model,
         deepSeekModel: openAIConfig.deepSeekModel,
+        groqTranscriptionModel: openAIConfig.groqTranscriptionModel,
         llmProvider: openAIConfig.llmProvider,
         asrProvider: openAIConfig.asrProvider,
         transcriptionModel: openAIConfig.transcriptionModel,
@@ -255,6 +259,7 @@ export default function App() {
     isStorageReady,
     openAIConfig.asrProvider,
     openAIConfig.deepSeekModel,
+    openAIConfig.groqTranscriptionModel,
     openAIConfig.llmProvider,
     openAIConfig.model,
     openAIConfig.proxyUrl,
@@ -280,6 +285,7 @@ export default function App() {
     openAIConfig: {
       model: openAIConfig.model,
       deepSeekModel: openAIConfig.deepSeekModel,
+      groqTranscriptionModel: openAIConfig.groqTranscriptionModel,
       llmProvider: openAIConfig.llmProvider,
       asrProvider: openAIConfig.asrProvider,
       transcriptionModel: openAIConfig.transcriptionModel,
@@ -313,12 +319,14 @@ export default function App() {
         ...current,
         model: imported.openAIConfig.model || current.model,
         deepSeekModel: imported.openAIConfig.deepSeekModel || current.deepSeekModel,
+        groqTranscriptionModel: imported.openAIConfig.groqTranscriptionModel || current.groqTranscriptionModel,
         llmProvider: imported.openAIConfig.llmProvider || current.llmProvider,
         asrProvider: imported.openAIConfig.asrProvider || current.asrProvider,
         transcriptionModel: imported.openAIConfig.transcriptionModel || current.transcriptionModel,
         proxyUrl: imported.openAIConfig.proxyUrl || current.proxyUrl,
         apiKey: "",
-        deepSeekApiKey: ""
+        deepSeekApiKey: "",
+        groqApiKey: ""
       }));
       setAssetTransferStatus(
         `导入完成：${imported.sessions.length} 个任务、${imported.intelItems.length} 条情报、${imported.terms.length} 个术语、${imported.correctionRules.length} 条纠错规则。`
@@ -1155,7 +1163,23 @@ function SettingsScreen({
           })}
         </View>
         <Text style={styles.inputLabel}>ASR 转写服务</Text>
-        <Text style={styles.readonlyPill}>OpenAI / Whisper 兼容通道</Text>
+        <View style={styles.providerRow}>
+          {(["openai", "groq"] as const).map((provider) => {
+            const active = openAIConfig.asrProvider === provider;
+            return (
+              <Pressable
+                key={provider}
+                accessibilityRole="button"
+                style={[styles.providerButton, active && styles.providerButtonActive]}
+                onPress={() => updateConfig({ asrProvider: provider })}
+              >
+                <Text style={[styles.providerButtonText, active && styles.providerButtonTextActive]}>
+                  {provider === "openai" ? "OpenAI Whisper" : "Groq Whisper"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
         <Text style={styles.inputLabel}>代理地址</Text>
         <TextInput
           value={openAIConfig.proxyUrl}
@@ -1180,6 +1204,16 @@ function SettingsScreen({
           value={openAIConfig.deepSeekApiKey}
           onChangeText={(deepSeekApiKey) => updateConfig({ deepSeekApiKey })}
           placeholder="sk-..."
+          placeholderTextColor="#89939d"
+          secureTextEntry
+          autoCapitalize="none"
+          style={styles.singleLineInput}
+        />
+        <Text style={styles.inputLabel}>Groq API Key（可选，前端临时测试）</Text>
+        <TextInput
+          value={openAIConfig.groqApiKey}
+          onChangeText={(groqApiKey) => updateConfig({ groqApiKey })}
+          placeholder="gsk_..."
           placeholderTextColor="#89939d"
           secureTextEntry
           autoCapitalize="none"
@@ -1212,11 +1246,22 @@ function SettingsScreen({
           autoCapitalize="none"
           style={styles.singleLineInput}
         />
+        <Text style={styles.inputLabel}>Groq 转写模型</Text>
+        <TextInput
+          value={openAIConfig.groqTranscriptionModel}
+          onChangeText={(groqTranscriptionModel) => updateConfig({ groqTranscriptionModel })}
+          placeholder="whisper-large-v3-turbo"
+          placeholderTextColor="#89939d"
+          autoCapitalize="none"
+          style={styles.singleLineInput}
+        />
       </View>
       <SettingRow
         icon="cpu-64-bit"
         title="AI 模式"
-        value={`${openAIConfig.llmProvider === "deepseek" ? "DeepSeek" : "OpenAI"} 分析 + OpenAI/Whisper 转写${
+        value={`${openAIConfig.llmProvider === "deepseek" ? "DeepSeek" : "OpenAI"} 分析 + ${
+          openAIConfig.asrProvider === "groq" ? "Groq Whisper" : "OpenAI/Whisper"
+        } 转写${
           openAIConfig.proxyUrl ? "（代理后端）" : openAIConfig.apiKey || openAIConfig.deepSeekApiKey ? "（前端临时 Key）" : "（本地模拟）"
         }`}
       />

@@ -1,5 +1,6 @@
 const OPENAI_API_BASE = "https://api.openai.com/v1";
 const DEEPSEEK_API_BASE = "https://api.deepseek.com";
+const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -41,6 +42,19 @@ function assertLLMKey(provider) {
   if (provider === "deepseek") {
     if (!process.env.DEEPSEEK_API_KEY) {
       const error = new Error("DEEPSEEK_API_KEY is not configured in Vercel environment variables.");
+      error.statusCode = 500;
+      throw error;
+    }
+    return;
+  }
+
+  assertApiKey();
+}
+
+function assertASRKey(provider) {
+  if (provider === "groq") {
+    if (!process.env.GROQ_API_KEY) {
+      const error = new Error("GROQ_API_KEY is not configured in Vercel environment variables.");
       error.statusCode = 500;
       throw error;
     }
@@ -139,11 +153,19 @@ async function transcribe(body) {
   const audioBase64 = typeof body.audioBase64 === "string" ? body.audioBase64 : "";
   const mimeType = typeof body.mimeType === "string" ? body.mimeType : "audio/webm";
   const mode = typeof body.mode === "string" ? body.mode : "meeting";
-  const model = typeof body.model === "string" && body.model ? body.model : "gpt-4o-transcribe";
+  const provider = body.provider === "groq" ? "groq" : "openai";
+  const model =
+    typeof body.model === "string" && body.model
+      ? body.model
+      : provider === "groq"
+        ? "whisper-large-v3-turbo"
+        : "gpt-4o-transcribe";
 
   if (!audioBase64) {
     throw new Error("No audioBase64 provided.");
   }
+
+  assertASRKey(provider);
 
   const extension = mimeType.includes("mp4")
     ? "m4a"
@@ -159,10 +181,12 @@ async function transcribe(body) {
   formData.append("model", model);
   formData.append("language", mode === "intel" ? "zh" : "ja");
 
-  const response = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+  const apiBase = provider === "groq" ? GROQ_API_BASE : OPENAI_API_BASE;
+  const apiKey = provider === "groq" ? process.env.GROQ_API_KEY : process.env.OPENAI_API_KEY;
+  const response = await fetch(`${apiBase}/audio/transcriptions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+      Authorization: `Bearer ${apiKey}`
     },
     body: formData
   });

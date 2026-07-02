@@ -6,6 +6,7 @@ module.exports = async function handler(req, res) {
     ok: true,
     hasApiKey: Boolean(process.env.OPENAI_API_KEY),
     hasOpenAIKey: Boolean(process.env.OPENAI_API_KEY),
-    hasDeepSeekKey: Boolean(process.env.DEEPSEEK_API_KEY)
+    hasDeepSeekKey: Boolean(process.env.DEEPSEEK_API_KEY),
+    hasGroqKey: Boolean(process.env.GROQ_API_KEY)
   });
 };
