@@ -555,7 +555,7 @@ function CaptureScreen({
 
     lastAutoTranscribedBlobRef.current = audioBlob;
     if (!hasConfiguredOpenAI(openAIConfig)) {
-      setAnalysisStatus("录音已生成音频；配置 /api、Vercel OPENAI_API_KEY 或前端 API Key 后可自动转写。");
+      setAnalysisStatus("录音已生成音频；配置 /api、Vercel ASR Key 或前端 API Key 后可自动转写。");
       return;
     }
 
@@ -584,7 +584,7 @@ function CaptureScreen({
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "自动转写失败。";
         setAnalysisError(message);
-        setAnalysisStatus("自动转写失败。请检查 /api、Vercel OPENAI_API_KEY、网络或音频格式。");
+        setAnalysisStatus("自动转写失败。请检查 /api、Vercel ASR Key、网络或音频格式。");
       } finally {
         if (!cancelled) {
           setIsAnalyzing(false);
@@ -609,7 +609,7 @@ function CaptureScreen({
 
       if (hasOpenAIConnection) {
         if (!textForAnalysis && voiceCapture.audioBlob) {
-          setAnalysisStatus("正在调用 OpenAI 转写音频...");
+          setAnalysisStatus(`正在调用 ${asrLabel} 转写音频...`);
           textForAnalysis = await transcribeAudioBlob(voiceCapture.audioBlob, selectedMode, openAIConfig);
           setInput(textForAnalysis);
         }
@@ -618,14 +618,14 @@ function CaptureScreen({
           throw new Error("请先录音或输入文本。");
         }
 
-        setAnalysisStatus("正在调用 OpenAI 生成结构化分析...");
+        setAnalysisStatus(`正在调用 ${llmLabel} 生成结构化分析...`);
         const result = await analyzeTextWithOpenAI(selectedMode, textForAnalysis, openAIConfig, correctionRules);
         onAnalyzed(createOpenAIBackedSession(selectedMode, textForAnalysis, result));
         setAnalysisStatus("真实分析完成。");
       } else {
         const correctedText = applyCorrectionRules(textForAnalysis, correctionRules);
         if (!correctedText.trim()) {
-          throw new Error("请先录音或输入文本；录音转写需要配置 OpenAI API Key。");
+          throw new Error("请先录音或输入文本；录音转写需要配置 ASR Key。");
         }
         const session = createAnalyzedSession(selectedMode, correctedText);
         onAnalyzed(session);
@@ -657,7 +657,7 @@ function CaptureScreen({
       const audioFile = await selectAudioFile();
       if (!audioFile) return;
       setAnalysisStatus(`已选择录音文件：${audioFile.name}`);
-      if (openAIConfig.apiKey.trim() || openAIConfig.proxyUrl.trim()) {
+      if (hasConfiguredOpenAI(openAIConfig)) {
         setIsAnalyzing(true);
         setAnalysisStatus("正在转写录音文件...");
         const text = await transcribeAudioBlob(audioFile.blob, selectedMode, openAIConfig);
@@ -904,7 +904,7 @@ function LearningFeedScreen({
     try {
       setError(null);
       if (!openAIConfig.apiKey.trim() && !openAIConfig.proxyUrl.trim()) {
-        throw new Error("请先在设置页配置 /api、本地代理或 OpenAI API Key。");
+        throw new Error("请先在设置页配置 /api、本地代理或 ASR API Key。");
       }
 
       const audioFile = await selectAudioFile();
