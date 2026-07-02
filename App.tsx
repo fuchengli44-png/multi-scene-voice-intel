@@ -607,16 +607,23 @@ function CaptureScreen({
         if (cancelled) return;
         setInput(text);
         setAnalysisStatus("自动转写完成，正在学习录音中的术语、表达和情报...");
-        const learning = await learnFromRecordingText(text, openAIConfig, correctionRules);
-        if (cancelled) return;
-        onLearningReady({
-          terms: learning.terms,
-          intel: learning.intel,
-          corrections: learning.corrections
-        });
-        setAnalysisStatus(
-          `自动转写完成并已学习：${learning.terms.length} 个术语，${learning.corrections.length} 条纠错，${learning.intel.length} 条情报。`
-        );
+        try {
+          const learning = await learnFromRecordingText(text, openAIConfig, correctionRules);
+          if (cancelled) return;
+          onLearningReady({
+            terms: learning.terms,
+            intel: learning.intel,
+            corrections: learning.corrections
+          });
+          setAnalysisStatus(
+            `自动转写完成并已学习：${learning.terms.length} 个术语，${learning.corrections.length} 条纠错，${learning.intel.length} 条情报。`
+          );
+        } catch (learningError) {
+          if (cancelled) return;
+          const message = learningError instanceof Error ? learningError.message : "自动学习失败。";
+          setAnalysisError(message);
+          setAnalysisStatus("自动转写已完成，但自动学习失败。转写文本已保留，请检查 DeepSeek 余额或 API Key。");
+        }
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "自动转写失败。";
@@ -700,15 +707,21 @@ function CaptureScreen({
         const text = await transcribeAudioBlob(audioFile.blob, selectedMode, openAIConfig);
         setInput(text);
         setAnalysisStatus("转写完成，正在自动学习录音中的术语、表达和情报...");
-        const learning = await learnFromRecordingText(text, openAIConfig, correctionRules);
-        onLearningReady({
-          terms: learning.terms,
-          intel: learning.intel,
-          corrections: learning.corrections
-        });
-        setAnalysisStatus(
-          `转写完成并已学习：${learning.terms.length} 个术语，${learning.corrections.length} 条纠错，${learning.intel.length} 条情报。`
-        );
+        try {
+          const learning = await learnFromRecordingText(text, openAIConfig, correctionRules);
+          onLearningReady({
+            terms: learning.terms,
+            intel: learning.intel,
+            corrections: learning.corrections
+          });
+          setAnalysisStatus(
+            `转写完成并已学习：${learning.terms.length} 个术语，${learning.corrections.length} 条纠错，${learning.intel.length} 条情报。`
+          );
+        } catch (learningError) {
+          const message = learningError instanceof Error ? learningError.message : "自动学习失败。";
+          setAnalysisError(message);
+          setAnalysisStatus("转写已完成，但自动学习失败。转写文本已保留，请检查 DeepSeek 余额或 API Key。");
+        }
       } else {
         setAnalysisStatus("已选择录音文件；配置 /api、本地代理或 API Key 后可自动转写。");
       }
