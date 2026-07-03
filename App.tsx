@@ -700,10 +700,10 @@ function CaptureScreen({
       setAnalysisError(null);
       const audioFile = await selectAudioFile();
       if (!audioFile) return;
-      setAnalysisStatus(`已选择录音文件：${audioFile.name}`);
+      setAnalysisStatus(`已选择录音文件：${audioFile.name}（${formatFileSize(audioFile.blob.size)}）`);
       if (hasConfiguredOpenAI(openAIConfig)) {
         setIsAnalyzing(true);
-        setAnalysisStatus("正在转写录音文件...");
+        setAnalysisStatus(`正在转写录音文件（${formatFileSize(audioFile.blob.size)}）...`);
         const text = await transcribeAudioBlob(audioFile.blob, selectedMode, openAIConfig);
         setInput(text);
         setAnalysisStatus("转写完成，正在自动学习录音中的术语、表达和情报...");
@@ -962,7 +962,7 @@ function LearningFeedScreen({
   const importAudioMeeting = async () => {
     try {
       setError(null);
-      if (!openAIConfig.apiKey.trim() && !openAIConfig.proxyUrl.trim()) {
+      if (!hasConfiguredOpenAI(openAIConfig)) {
         throw new Error("请先在设置页配置 /api、本地代理或 ASR API Key。");
       }
 
@@ -970,7 +970,7 @@ function LearningFeedScreen({
       if (!audioFile) return;
 
       setIsProcessingAudio(true);
-      setStatus(`正在转写录音：${audioFile.name}`);
+      setStatus(`正在转写录音：${audioFile.name}（${formatFileSize(audioFile.blob.size)}）`);
       const transcript = await transcribeAudioBlob(audioFile.blob, "meeting", openAIConfig);
       setStatus("转写完成，正在整理会议纪要...");
       const result = await analyzeTextWithOpenAI("meeting", transcript, openAIConfig, correctionRules);
@@ -1849,6 +1849,13 @@ function formatNow() {
   ).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(
     now.getMinutes()
   ).padStart(2, "0")}`;
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 function formatDateForFilename(date: Date) {

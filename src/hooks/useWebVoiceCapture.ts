@@ -37,6 +37,9 @@ const modeLanguage: Record<SceneMode, string> = {
   intel: "zh-CN"
 };
 
+const WEB_AUDIO_BITS_PER_SECOND = 24000;
+const WEB_AUDIO_TIMESLICE_MS = 5000;
+
 export function useWebVoiceCapture(mode: SceneMode) {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("录音待命");
@@ -138,23 +141,29 @@ export function useWebVoiceCapture(mode: SceneMode) {
 
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
+        channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true
+        autoGainControl: true,
+        sampleRate: 16000
       }
     });
     streamRef.current = stream;
 
     const mimeType = getSupportedRecordingMimeType();
     recorderMimeTypeRef.current = mimeType || "audio/webm";
-    const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: WEB_AUDIO_BITS_PER_SECOND };
+    if (mimeType) {
+      recorderOptions.mimeType = mimeType;
+    }
+    const mediaRecorder = new MediaRecorder(stream, recorderOptions);
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunksRef.current.push(event.data);
       }
     };
     mediaRecorderRef.current = mediaRecorder;
-    mediaRecorder.start(1000);
+    mediaRecorder.start(WEB_AUDIO_TIMESLICE_MS);
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();

@@ -192,7 +192,7 @@ async function transcribe(body) {
   });
 
   if (!response.ok) {
-    throw new Error(await readOpenAIError(response, "OpenAI transcription failed"));
+    throw new Error(await readOpenAIError(response, "ASR transcription failed"));
   }
 
   return response.json();

@@ -13,6 +13,7 @@ const OPENAI_API_BASE = "https://api.openai.com/v1";
 const DEEPSEEK_API_BASE = "https://api.deepseek.com";
 const GROQ_API_BASE = "https://api.groq.com/openai/v1";
 const MAX_VERCEL_PROXY_AUDIO_BYTES = 3.2 * 1024 * 1024;
+const TRANSCRIPTION_TIMEOUT_MS = 120000;
 
 export type LLMProvider = "openai" | "deepseek";
 export type ASRProvider = "openai" | "groq";
@@ -116,11 +117,11 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
   if (!config.apiKey.trim() && proxyUrl) {
     if (audioBlob.size > MAX_VERCEL_PROXY_AUDIO_BYTES) {
       throw new Error(
-        "录音文件较大，Vercel /api 代理可能超过 4.5MB 请求限制。请先用 1-2 分钟短录音测试，或临时在设置页填 OpenAI API Key 走浏览器直传，后续可升级为对象存储上传。"
+        "录音文件较大，Vercel /api 代理可能超过 4.5MB 请求限制。请先用 1-2 分钟短录音测试；长录音需要升级为对象存储或可续传上传。"
       );
     }
 
-    const response = await fetch(`${proxyUrl}/transcribe`, {
+    const response = await fetchWithTimeout(`${proxyUrl}/transcribe`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -130,7 +131,7 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
         provider: config.asrProvider,
         model: config.asrProvider === "groq" ? config.groqTranscriptionModel : config.transcriptionModel
       })
-    });
+    }, TRANSCRIPTION_TIMEOUT_MS, "录音转写");
 
     if (!response.ok) {
       throw new Error(await readProviderError(response, "Transcription failed"));
@@ -151,11 +152,11 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
   formData.append("model", asrModel);
   formData.append("language", mode === "intel" ? "zh" : "ja");
 
-  const response = await fetch(`${asrBaseUrl}/audio/transcriptions`, {
+  const response = await fetchWithTimeout(`${asrBaseUrl}/audio/transcriptions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${asrApiKey}` },
     body: formData
-  });
+  }, TRANSCRIPTION_TIMEOUT_MS, "录音转写");
 
   if (!response.ok) {
     throw new Error(await readProviderError(response, "Transcription failed"));
@@ -616,4 +617,19 @@ async function blobToBase64(blob: Blob) {
   }
 
   return btoa(binary);
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number, label: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${label}超时。请先用 1-2 分钟短录音测试，长录音需要分段或升级为对象存储上传。`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
