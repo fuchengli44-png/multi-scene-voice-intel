@@ -33,6 +33,7 @@ import {
 import {
   createOpenAIBackedSession,
   transcribeAudioBlob,
+  transcribeAudioCapture,
   analyzeTextWithOpenAI,
   learnFromRecordingText,
   hasConfiguredOpenAI,
@@ -603,7 +604,17 @@ function CaptureScreen({
 
     (async () => {
       try {
-        const text = await transcribeAudioBlob(audioBlob, selectedMode, openAIConfig);
+        const text = await transcribeAudioCapture(
+          audioBlob,
+          voiceCapture.audioSegments,
+          selectedMode,
+          openAIConfig,
+          (completed, total) => {
+            if (total > 1) {
+              setAnalysisStatus(`正在分段转写录音：${completed}/${total}`);
+            }
+          }
+        );
         if (cancelled) return;
         setInput(text);
         setAnalysisStatus("自动转写完成，正在学习录音中的术语、表达和情报...");
@@ -654,7 +665,17 @@ function CaptureScreen({
       if (hasOpenAIConnection) {
         if (!textForAnalysis && voiceCapture.audioBlob) {
           setAnalysisStatus(`正在调用 ${asrLabel} 转写音频...`);
-          textForAnalysis = await transcribeAudioBlob(voiceCapture.audioBlob, selectedMode, openAIConfig);
+          textForAnalysis = await transcribeAudioCapture(
+            voiceCapture.audioBlob,
+            voiceCapture.audioSegments,
+            selectedMode,
+            openAIConfig,
+            (completed, total) => {
+              if (total > 1) {
+                setAnalysisStatus(`正在分段转写音频：${completed}/${total}`);
+              }
+            }
+          );
           setInput(textForAnalysis);
         }
 

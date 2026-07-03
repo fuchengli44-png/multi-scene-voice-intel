@@ -169,6 +169,44 @@ export async function transcribeAudioBlob(audioBlob: Blob, mode: SceneMode, conf
   return data.text;
 }
 
+export async function transcribeAudioCapture(
+  audioBlob: Blob,
+  audioSegments: Blob[],
+  mode: SceneMode,
+  config: OpenAIConfig,
+  onProgress?: (completed: number, total: number) => void
+) {
+  const usableSegments = audioSegments.filter((segment) => segment.size > 0);
+  const proxyUrl = normalizeProxyUrl(config.proxyUrl);
+  const shouldUseSegments =
+    !config.apiKey.trim() &&
+    Boolean(proxyUrl) &&
+    audioBlob.size > MAX_VERCEL_PROXY_AUDIO_BYTES &&
+    usableSegments.length > 1;
+
+  if (!shouldUseSegments) {
+    return transcribeAudioBlob(audioBlob, mode, config);
+  }
+
+  const texts: string[] = [];
+  for (let index = 0; index < usableSegments.length; index += 1) {
+    const segment = usableSegments[index];
+    if (!segment) continue;
+    onProgress?.(index + 1, usableSegments.length);
+    const text = await transcribeAudioBlob(segment, mode, config);
+    if (text.trim()) {
+      texts.push(text.trim());
+    }
+  }
+  onProgress?.(usableSegments.length, usableSegments.length);
+
+  if (!texts.length) {
+    throw new Error("分段转写完成但没有返回文本。");
+  }
+
+  return texts.join("\n");
+}
+
 export async function analyzeTextWithOpenAI(
   mode: SceneMode,
   inputText: string,

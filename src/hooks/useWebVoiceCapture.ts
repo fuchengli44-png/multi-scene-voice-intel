@@ -38,7 +38,7 @@ const modeLanguage: Record<SceneMode, string> = {
 };
 
 const WEB_AUDIO_BITS_PER_SECOND = 24000;
-const WEB_AUDIO_TIMESLICE_MS = 5000;
+const WEB_AUDIO_TIMESLICE_MS = 30000;
 
 export function useWebVoiceCapture(mode: SceneMode) {
   const [isRecording, setIsRecording] = useState(false);
@@ -47,6 +47,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioSegments, setAudioSegments] = useState<Blob[]>([]);
   const nativeRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -135,6 +136,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
 
     setStatus("正在请求麦克风权限...");
     setAudioBlob(null);
+    setAudioSegments([]);
     setTranscript("");
     setInterimTranscript("");
     chunksRef.current = [];
@@ -160,6 +162,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         chunksRef.current.push(event.data);
+        setAudioSegments((current) => [...current, event.data]);
       }
     };
     mediaRecorderRef.current = mediaRecorder;
@@ -215,6 +218,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
       playsInSilentMode: true
     });
     setAudioBlob(null);
+    setAudioSegments([]);
     setTranscript("");
     setInterimTranscript("");
     await nativeRecorder.prepareToRecordAsync();
@@ -251,6 +255,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
     setTranscript("");
     setInterimTranscript("");
     setAudioBlob(null);
+    setAudioSegments([]);
     chunksRef.current = [];
     setError(null);
     setStatus("录音待命");
@@ -266,6 +271,7 @@ export function useWebVoiceCapture(mode: SceneMode) {
 
   return {
     audioBlob,
+    audioSegments,
     error,
     interimTranscript,
     isRecording,
